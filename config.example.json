@@ -1,0 +1,12 @@
+{
+  "stateDir": ".data",
+  "sources": [
+    {
+      "id": "private-pages",
+      "startUrl": "https://example.github.io/private-docs/",
+      "authProbeUrl": "https://example.github.io/private-docs/",
+      "allowedOrigins": ["https://example.github.io"],
+      "profileDir": ".data/browser-profiles/private-pages"
+    }
+  ]
+}
