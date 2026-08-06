@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Local stdio MCP for retrieving authenticated private GitHub Pages.",
+  "description": "èªè¨¼ãå¿è¦ãª Private GitHub Pages ãåå¾ããã­ã¼ã«ã« stdio MCPã",
   "scripts": {
     "build": "tsc --noEmit",
     "start": "tsx src/index.ts",

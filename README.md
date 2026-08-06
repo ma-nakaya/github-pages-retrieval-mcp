@@ -1,26 +1,26 @@
 # GitHub Pages Retrieval MCP
 
-Local stdio MCP server that retrieves private GitHub Pages through an authenticated, persistent browser profile. It treats the rendered Pages site as the only source and never uses the source repository or GitHub API.
+GitHub èªè¨¼ã»SAMLã»MFA ãå¿è¦ãª Private GitHub Pages ããèªè¨¼æ¸ã¿ã®å°ç¨ãã©ã¦ã¶ãã­ãã¡ã¤ã«çµç±ã§åå¾ããã­ã¼ã«ã« stdio MCP ãµã¼ãã¼ã§ããåå¾åã¯ã¬ã³ããªã³ã°æ¸ã¿ã® Pages ãµã¤ãã ãã«éå®ããã½ã¼ã¹ãªãã¸ããªã GitHub API ã¯å©ç¨ãã¾ããã
 
-The repository is an Agent Plugin for Claude Code and GitHub Copilot CLI. It bundles the MCP configuration and the `github-pages-retrieval` skill. Both clients start the same local stdio process.
+Claude Code ã¨ GitHub Copilot CLI åãã® Agent Plugin ã¨ãã¦éå¸ãã¾ããMCP è¨­å®ã¨ `github-pages-retrieval` ã¹ã­ã«ãåæ¢±ããã©ã¡ãã®ã¯ã©ã¤ã¢ã³ãã§ãåãã­ã¼ã«ã« stdio ãã­ã»ã¹ãèµ·åãã¾ãã
 
-## What it provides
+## æä¾ããæ©è½
 
-- A separate persistent browser profile for each configured Pages source.
-- Explicit, visible reauthentication for GitHub, SAML, and MFA.
-- Allowlisted Pages-only retrieval through Playwright.
-- Local authentication-state tracking without exposing cookies or credentials through MCP.
+- Pages ã½ã¼ã¹ãã¨ã®å°ç¨ã»æ°¸ç¶ãã©ã¦ã¶ãã­ãã¡ã¤ã«
+- GitHubãSAMLãMFA ã«å¯¾ããæç¤ºçãªå¯¾è©±èªè¨¼
+- Playwright ã«ããè¨±å¯æ¸ã¿ Pages ãªãªã¸ã³ã ãã®åå¾
+- Cookie ãèªè¨¼æå ±ã MCP ã«æ¸¡ããªãã­ã¼ã«ã«èªè¨¼ç¶æç®¡ç
 
-## Setup
+## åä½ã§ä½¿ãå ´åã®æºå
 
-1. Install Node.js 22 or newer, then run `npm install`.
-2. For standalone use, copy `config.example.json` to `config.local.json` and replace the example URL and origin.
-3. Run `npm start` from the repository root.
-4. Connect the command as a local stdio MCP server.
+1. Node.js 22 ä»¥éãã¤ã³ã¹ãã¼ã«ãã`npm install` ãå®è¡ãã¾ãã
+2. `config.example.json` ã `config.local.json` ã«ã³ãã¼ããå¯¾è±¡ URL ã¨ãªãªã¸ã³ãè¨­å®ãã¾ãã
+3. ãªãã¸ããªç´ä¸ã§ `npm start` ãå®è¡ãã¾ãã
+4. èµ·åã³ãã³ããã­ã¼ã«ã« stdio MCP ãµã¼ãã¼ã¨ãã¦ç»é²ãã¾ãã
 
-## Plugin installation
+## ãã©ã°ã¤ã³ã¨ãã¦ã®å°å¥
 
-Install dependencies once in the plugin directory before enabling it. The package intentionally does not run installation scripts automatically.
+æå¹ååã«ããã©ã°ã¤ã³ãã£ã¬ã¯ããªã§ä¸åº¦ã ãä¾å­ããã±ã¼ã¸ãã¤ã³ã¹ãã¼ã«ãã¦ãã ãããæå³ããªãå®è¡ãé¿ãããããã¤ã³ã¹ãã¼ã«ã¹ã¯ãªããã¯èªåå®è¡ãã¾ããã
 
 ### Claude Code
 
@@ -29,7 +29,7 @@ Install dependencies once in the plugin directory before enabling it. The packag
 /plugin install github-pages-retrieval@github-pages-retrieval-marketplace
 ```
 
-Claude Code supplies a private persistent data directory through `CLAUDE_PLUGIN_DATA`. Create `config.local.json` there using `config.example.json`, then use the bundled skill to start authentication.
+Claude Code ã¯ `CLAUDE_PLUGIN_DATA` ãéãã¦ãã©ã¤ãã¼ããªæ°¸ç¶ãã¼ã¿ãã£ã¬ã¯ããªãæä¾ãã¾ããããã« `config.example.json` ããã¨ã« `config.local.json` ãä½æããåæ¢±ã¹ã­ã«ããèªè¨¼ãéå§ãã¾ãã
 
 ### GitHub Copilot CLI
 
@@ -38,13 +38,13 @@ copilot plugin marketplace add ma-nakaya/github-pages-retrieval-mcp
 copilot plugin install github-pages-retrieval@github-pages-retrieval-marketplace
 ```
 
-For durable browser state across plugin updates, set `GPR_PLUGIN_DATA` to a private local directory in Copilot's MCP server environment, then create `config.local.json` there from `config.example.json`. If it is unset, the server uses `.data/` inside the installed plugin directory.
+ãã©ã°ã¤ã³æ´æ°å¾ããã©ã¦ã¶ç¶æãç¶­æããã«ã¯ãCopilot ã® MCP ãµã¼ãã¼ç°å¢å¤æ° `GPR_PLUGIN_DATA` ã«éå¬éã®ã­ã¼ã«ã«ãã£ã¬ã¯ããªãè¨­å®ããããã¸ `config.example.json` ããã¨ã« `config.local.json` ãä½æãã¾ããæªè¨­å®æã¯ãã¤ã³ã¹ãã¼ã«æ¸ã¿ãã©ã°ã¤ã³ãã£ã¬ã¯ããªåã® `.data/` ãä½¿ç¨ãã¾ãã
 
-The plugin targets local Copilot CLI. Copilot cloud agent and code review run in GitHub-hosted environments and cannot reuse a user's local interactive browser profile for GitHub/SAML/MFA.
+å¯¾è±¡ã¯ã­ã¼ã«ã«ã§å®è¡ãã Copilot CLI ã§ããCopilot cloud agent ã¨ code review ã¯ GitHub ãã¹ãç°å¢ã§åä½ãããããã¦ã¼ã¶ã¼ã®ã­ã¼ã«ã«ãª GitHubï¼SAMLï¼MFA ç¨ãã©ã¦ã¶ãã­ãã¡ã¤ã«ãåå©ç¨ã§ãã¾ããã
 
-For GitHub Copilot in an IDE, register the same local command from the installed plugin directory in the IDE's MCP configuration. The bundled plugin itself is currently validated for Copilot CLI.
+IDE ä¸ã® GitHub Copilot ã§ã¯ãã¤ã³ã¹ãã¼ã«æ¸ã¿ãã©ã°ã¤ã³ãã£ã¬ã¯ããªã®åãã­ã¼ã«ã«ã³ãã³ãã IDE ã® MCP è¨­å®ã¸ç»é²ãã¦ãã ãããåæ¢±ãã©ã°ã¤ã³ã¯ç¾å¨ Copilot CLI ã§æ¤è¨¼ãã¦ãã¾ãã
 
-Example standalone configuration:
+åä½å©ç¨æã®è¨­å®ä¾:
 
 ```toml
 [mcp_servers.github_pages_retrieval]
@@ -53,18 +53,18 @@ args = ["start"]
 cwd = "C:/path/to/github-pages-retrieval-mcp"
 ```
 
-## Authentication flow
+## èªè¨¼ãã­ã¼
 
-1. Call `begin_source_reauth` for a source. A visible local browser opens at the configured Pages URL.
-2. Complete GitHub, SAML, and MFA in that browser. The server does not automate or receive those credentials.
-3. Call `validate_source_auth`. The server validates the protected Pages URL and stores only `ready` or `auth_required` plus its timestamp.
-4. Use `fetch_pages_content` for an allowlisted Pages URL.
+1. å¯¾è±¡ã½ã¼ã¹ã« `begin_source_reauth` ãå¼ã³åºãã¾ããè¨­å®æ¸ã¿ã® Pages URL ãè¡¨ç¤ºããã­ã¼ã«ã«ãã©ã¦ã¶ãéãã¾ãã
+2. ãã©ã¦ã¶ã§ GitHubãSAMLãMFA ãå®äºãã¾ãããµã¼ãã¼ããã¹ã¯ã¼ãã MFA ã³ã¼ããèªåæä½ã»åä¿¡ãããã¨ã¯ããã¾ããã
+3. å®äºå¾ã« `validate_source_auth` ãå¼ã³åºãã¾ããä¿è­·ããã Pages URL ãæ¤è¨¼ãã`ready` ã¾ãã¯ `auth_required` ã¨æ¥æã ããä¿å­ãã¾ãã
+4. è¨±å¯æ¸ã¿ Pages URL ã«å¯¾ãã¦ `fetch_pages_content` ãä½¿ç¨ãã¾ãã
 
-If authentication expires, `fetch_pages_content` records `auth_required`. Start the same explicit flow again.
+èªè¨¼ã®æå¹æéãåããå ´åã`fetch_pages_content` ã¯ `auth_required` ãè¨é²ãã¾ããåãæç¤ºçãªèªè¨¼ãã­ã¼ãããä¸åº¦éå§ãã¦ãã ããã
 
-## Safety boundaries
+## ã»ã­ã¥ãªãã£å¢ç
 
-- Do not use a daily-use browser profile. The configured profile directory is a credential-bearing asset.
-- Keep `config.local.json` and `.data/` private; both are ignored by Git.
-- Do not point `allowedOrigins` at GitHub repository URLs. The MCP accepts only configured Pages origins.
-- This first version retrieves and returns one page. Crawling, chunking, and local full-text/vector indexing should be added after a real Pages source is validated.
+- æ¥å¸¸å©ç¨ã®ãã©ã¦ã¶ãã­ãã¡ã¤ã«ã¯ä½¿ããªãã§ãã ãããè¨­å®ãããã­ãã¡ã¤ã«ãã£ã¬ã¯ããªã«ã¯èªè¨¼æå ±ãå«ã¾ãã¾ãã
+- `config.local.json` ã¨ `.data/` ã¯éå¬éã§ç®¡çãã¦ãã ãããã©ã¡ãã Git ã®è¿½è·¡å¯¾è±¡å¤ã§ãã
+- `allowedOrigins` ã« GitHub ãªãã¸ããª URL ãè¨­å®ããªãã§ãã ãããMCP ã¯è¨­å®æ¸ã¿ã® Pages ãªãªã¸ã³ã ããåãä»ãã¾ãã
+- åçã¯ 1 ãã¼ã¸ã®åå¾ã»è¿å´ã®ã¿ã§ããã¯ã­ã¼ã«ããã£ã³ã¯åãã­ã¼ã«ã«å¨ææ¤ç´¢ã»ãã¯ãã«æ¤ç´¢ã¯ãå®éã® Pages ã½ã¼ã¹ã§æ¤è¨¼ããå¾ã«è¿½å ãã¾ãã

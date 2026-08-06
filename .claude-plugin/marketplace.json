@@ -4,13 +4,13 @@
     "name": "ma-nakaya"
   },
   "metadata": {
-    "description": "Local authenticated GitHub Pages retrieval plugin.",
+    "description": "èªè¨¼ãå¿è¦ãª GitHub Pages ãã­ã¼ã«ã«ã§åå¾ãããã©ã°ã¤ã³ã",
     "version": "0.1.0"
   },
   "plugins": [
     {
       "name": "github-pages-retrieval",
-      "description": "Retrieve authenticated private GitHub Pages through a local stdio MCP server.",
+      "description": "èªè¨¼ãå¿è¦ãª Private GitHub Pages ãã­ã¼ã«ã« stdio MCP çµç±ã§åå¾ãã¾ãã",
       "version": "0.1.0",
       "source": "."
     }

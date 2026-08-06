@@ -1,6 +1,6 @@
 {
   "name": "github-pages-retrieval",
-  "description": "Retrieve authenticated private GitHub Pages through a local stdio MCP server.",
+  "description": "èªè¨¼ãå¿è¦ãª Private GitHub Pages ãã­ã¼ã«ã« stdio MCP çµç±ã§åå¾ãã¾ãã",
   "version": "0.1.0",
   "author": {
     "name": "ma-nakaya",
