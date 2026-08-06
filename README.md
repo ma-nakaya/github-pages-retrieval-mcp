@@ -11,15 +11,15 @@ Claude Code と GitHub Copilot CLI 向けの Agent Plugin として配布しま�
 - Playwright による許可済み Pages オリジンだけの取得
 - Cookie や認証情報を MCP に渡さないローカル認証状態管理
 - DOMリンク巡回によるサイト構成の自動検出と差分更新
-- SQLite FTS5 trigram による日本語・英語の見出し単位検索
+- SQLite FTS5 trigram による多言語の見出し単位検索
 - 検索スニペットと節単位取得によるトークン量の抑制
+- ユーザー指定URLからの初回ソース設定
 
 ## 単体で使う場合の準備
 
 1. Node.js 22.5 以降をインストールし、`npm install` を実行します。
-2. `config.example.json` を `config.local.json` にコピーし、対象 URL とオリジンを設定します。
-3. リポジトリ直下で `npm start` を実行します。
-4. 起動コマンドをローカル stdio MCP サーバーとして登録します。
+2. リポジトリ直下の `npm start` を、ローカル stdio MCP サーバーの起動コマンドとして登録します。
+3. MCPの `list_pages_sources` を呼び出し、未設定ならユーザーから対象サイトURLを受け取って `configure_pages_source` で保存します。`config.example.json` から手動作成する方法も利用できます。
 
 ## プラグインとしての導入
 
@@ -32,7 +32,7 @@ Claude Code と GitHub Copilot CLI 向けの Agent Plugin として配布しま�
 /plugin install github-pages-retrieval@github-pages-retrieval-marketplace
 ```
 
-Claude Code は `CLAUDE_PLUGIN_DATA` を通じてプライベートな永続データディレクトリを提供します。そこに `config.example.json` をもとに `config.local.json` を作成し、同梱スキルから認証を開始します。
+Claude Code は `CLAUDE_PLUGIN_DATA` を通じてプライベートな永続データディレクトリを提供します。初回利用時は同梱スキルがサイトURLを確認し、そこへ `config.local.json` と専用ブラウザプロファイルを作成します。
 
 ### GitHub Copilot CLI
 
@@ -41,7 +41,7 @@ copilot plugin marketplace add ma-nakaya/github-pages-retrieval-mcp
 copilot plugin install github-pages-retrieval@github-pages-retrieval-marketplace
 ```
 
-プラグイン更新後もブラウザ状態を維持するには、Copilot の MCP サーバー環境変数 `GPR_PLUGIN_DATA` に非公開のローカルディレクトリを設定し、そこへ `config.example.json` をもとに `config.local.json` を作成します。未設定時は、インストール済みプラグインディレクトリ内の `.data/` を使用します。
+プラグイン更新後もブラウザ状態を維持するには、Copilot の MCP サーバー環境変数 `GPR_PLUGIN_DATA` に非公開のローカルディレクトリを設定します。初回利用時はサイトURLから設定を自動作成します。データディレクトリ未指定時は、インストール済みプラグインディレクトリ内の `.data/` を使用します。
 
 対象はローカルで実行する Copilot CLI です。Copilot cloud agent と code review は GitHub ホスト環境で動作するため、ユーザーのローカルな GitHub／SAML／MFA 用ブラウザプロファイルを再利用できません。
 
@@ -58,10 +58,13 @@ cwd = "C:/path/to/github-pages-retrieval-mcp"
 
 ## 認証フロー
 
-1. 対象ソースに `begin_source_reauth` を呼び出します。設定済みの Pages URL を表示したローカルブラウザが開きます。
-2. ブラウザで GitHub、SAML、MFA を完了します。サーバーがパスワードや MFA コードを自動操作・受信することはありません。
-3. 完了後に `validate_source_auth` を呼び出します。保護された Pages URL を検証し、`ready` または `auth_required` と日時だけを保存します。
-4. 許可済み Pages URL に対して `fetch_pages_content` を使用します。
+1. `list_pages_sources` を呼び出します。ソースがなければユーザーに正確なPagesサイトURLを質問し、回答後に `configure_pages_source` を呼び出します。
+2. 対象ソースに `begin_source_reauth` を呼び出します。設定済みの Pages URL を表示したローカルブラウザが開きます。
+3. ブラウザで GitHub、SAML、MFA を完了します。サーバーがパスワードや MFA コードを自動操作・受信することはありません。
+4. 完了後に `validate_source_auth` を呼び出します。保護された Pages URL を検証し、`ready` または `auth_required` と日時だけを保存します。
+5. 許可済み Pages URL に対して索引・検索ツールを使用します。
+
+`configure_pages_source` はHTTPS URLから正確なオリジンだけを許可し、ソースIDと専用プロファイルパスを生成します。同一オリジンが登録済みなら既存ソースを返し、既存設定を置換しません。壊れた設定ファイルも自動上書きせず、修正が必要なエラーとして返します。
 
 認証の有効期限が切れた場合、`fetch_pages_content` は `auth_required` を記録します。同じ明示的な認証フローをもう一度開始してください。
 

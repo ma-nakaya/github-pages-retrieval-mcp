@@ -9,14 +9,18 @@ Use this workflow only for GitHub Pages content. Never substitute the source rep
 
 ## Configure a source
 
-The MCP reads `config.local.json` from `PLUGIN_DATA` when installed as a plugin. Create it from the bundled example and set:
+1. Call `list_pages_sources` before asking for a source id.
+2. If it reports no configured sources, ask the user for the exact GitHub Pages site URL. Do not guess a URL from a repository or unrelated link.
+3. After the user provides the URL, call `configure_pages_source`. Use its returned source id for authentication and retrieval.
+
+The tool stores `config.local.json` below `PLUGIN_DATA` with:
 
 - one stable `id`;
 - the private Pages `startUrl` and optional `authProbeUrl`;
 - the exact Pages origins in `allowedOrigins`;
 - a dedicated `profileDir` below `PLUGIN_DATA`.
 
-Do not use a daily-use Chrome profile. Keep the configuration and the profile directory private.
+It derives the exact allowed origin and a dedicated profile path from the URL. Do not broaden `allowedOrigins`, use a daily-use Chrome profile, or overwrite an existing configuration. Keep the configuration and profile directory private.
 
 ## Authentication
 
