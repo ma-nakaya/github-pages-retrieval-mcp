@@ -28,6 +28,9 @@ type RefreshJob = {
 };
 const refreshJobs = new Map<string, RefreshJob>();
 const sourceIdSchema = z.object({ sourceId: z.string().min(1) });
+const localeSchema = z.string()
+  .regex(/^(all|default|[a-z]{2,3}(?:-[a-z0-9]{2,8})*)$/u)
+  .default("all");
 
 function textResult(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) },], structuredContent: value as Record<string, unknown> };
@@ -95,12 +98,13 @@ server.registerTool("fetch_pages_content", {
 
 server.registerTool("refresh_pages_index", {
   title: "Refresh Pages index",
-  description: "Starts a background crawl of allowlisted rendered Pages links. Returns immediately; poll get_pages_index for compact progress and final statistics.",
+  description: "Starts a parallel background crawl of allowlisted rendered Pages links. Returns immediately; poll get_pages_index for compact progress and final statistics.",
   inputSchema: {
     sourceId: z.string().min(1),
-    maxPages: z.number().int().min(1).max(2_000).default(500)
+    maxPages: z.number().int().min(1).max(2_000).default(500),
+    concurrency: z.number().int().min(1).max(32).default(12)
   }
-}, async ({ sourceId, maxPages }) => {
+}, async ({ sourceId, maxPages, concurrency }) => {
   const { config, source } = await sourceFor(sourceId);
   const active = refreshJobs.get(source.id);
   if (active?.status === "running") return textResult(active);
@@ -112,7 +116,7 @@ server.registerTool("refresh_pages_index", {
     startedAt: new Date().toISOString()
   };
   refreshJobs.set(source.id, job);
-  void indexer.refresh(source, indexPath(config.stateDir), maxPages).then(async (result) => {
+  void indexer.refresh(source, indexPath(config.stateDir), maxPages, concurrency).then(async (result) => {
     job.status = "completed";
     job.finishedAt = new Date().toISOString();
     job.result = result;
@@ -130,18 +134,19 @@ server.registerTool("refresh_pages_index", {
 
 server.registerTool("get_pages_index", {
   title: "Get compact Pages index",
-  description: "Returns index status and a compact URL/title list. Use pathContains and a small limit to minimize tokens.",
+  description: "Returns index status, locale counts, and a compact URL/title list. Use locale, pathContains, and a small limit to minimize tokens.",
   inputSchema: {
     sourceId: z.string().min(1),
     pathContains: z.string().min(1).optional(),
+    locale: localeSchema,
     limit: z.number().int().min(1).max(500).default(50)
   }
-}, async ({ sourceId, pathContains, limit }) => {
+}, async ({ sourceId, pathContains, locale, limit }) => {
   const { config, source } = await sourceFor(sourceId);
   const store = await PageIndexStore.open(indexPath(config.stateDir));
   try {
     const status = store.getStatus(source.id);
-    const pages = store.listPages(source.id, limit, pathContains);
+    const pages = store.listPages(source.id, limit, pathContains, locale);
     return textResult({
       sourceId: source.id,
       ...status,
@@ -156,21 +161,22 @@ server.registerTool("get_pages_index", {
 
 server.registerTool("search_pages_index", {
   title: "Search Pages index",
-  description: "Searches the local Japanese/English trigram index and returns only top headings with bounded snippets. Refresh the index first when it is empty or stale.",
+  description: "Searches the local multilingual trigram index and returns only top headings with bounded snippets. Set locale to all, default, en, ja, or another discovered locale.",
   inputSchema: {
     sourceId: z.string().min(1),
     query: z.string().min(1),
     urlContains: z.string().min(1).optional(),
+    locale: localeSchema,
     limit: z.number().int().min(1).max(20).default(5),
     maxSnippetChars: z.number().int().min(80).max(1_000).default(280)
   }
-}, async ({ sourceId, query, urlContains, limit, maxSnippetChars }) => {
+}, async ({ sourceId, query, urlContains, locale, limit, maxSnippetChars }) => {
   const { config, source } = await sourceFor(sourceId);
   const store = await PageIndexStore.open(indexPath(config.stateDir));
   try {
     const status = store.getStatus(source.id);
-    const results = store.search(source.id, query, limit, maxSnippetChars, urlContains);
-    return textResult({ sourceId: source.id, query, urlContains, ...status, resultCount: results.length, results });
+    const results = store.search(source.id, query, limit, maxSnippetChars, urlContains, locale);
+    return textResult({ sourceId: source.id, query, urlContains, locale, ...status, resultCount: results.length, results });
   } finally {
     store.close();
   }

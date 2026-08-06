@@ -36,12 +36,23 @@ type SectionRow = {
 
 export type SearchResult = {
   url: string;
+  locale: string;
   title: string;
   heading: string;
   level: number;
   anchor?: string;
   snippet: string;
 };
+
+export function localeFromUrl(value: string): string {
+  try {
+    const filename = new URL(value).pathname.split("/").at(-1) ?? "";
+    const match = filename.match(/\.([a-z]{2,3}(?:-[a-z0-9]{2,8})*)$/iu);
+    return match?.[1]?.toLocaleLowerCase() ?? "default";
+  } catch {
+    return "default";
+  }
+}
 
 function pageHash(page: IndexedPage): string {
   return createHash("sha256").update(JSON.stringify(page)).digest("hex");
@@ -67,6 +78,7 @@ function snippet(body: string, query: string, maxChars: number): string {
 
 export class PageIndexStore {
   private constructor(private readonly database: DatabaseSync) {
+    database.function("page_locale", { deterministic: true }, (value) => localeFromUrl(String(value ?? "")));
     database.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA foreign_keys = ON;
@@ -206,7 +218,12 @@ export class PageIndexStore {
     }
   }
 
-  getStatus(sourceId: string): { pageCount: number; sectionCount: number; lastIndexedAt?: string } {
+  getStatus(sourceId: string): {
+    pageCount: number;
+    sectionCount: number;
+    lastIndexedAt?: string;
+    locales: Record<string, number>;
+  } {
     const row = this.database.prepare(`
       SELECT COUNT(DISTINCT pages.id) AS page_count,
              COUNT(sections.id) AS section_count,
@@ -214,29 +231,46 @@ export class PageIndexStore {
       FROM pages LEFT JOIN sections ON sections.page_id = pages.id
       WHERE pages.source_id = ?
     `).get(sourceId) as { page_count: number; section_count: number; last_indexed_at: string | null };
+    const localeRows = this.database.prepare(`
+      SELECT page_locale(url) AS locale, COUNT(*) AS page_count
+      FROM pages WHERE source_id = ?
+      GROUP BY page_locale(url) ORDER BY locale
+    `).all(sourceId) as Array<{ locale: string; page_count: number }>;
     return {
       pageCount: row.page_count,
       sectionCount: row.section_count,
-      ...(row.last_indexed_at ? { lastIndexedAt: row.last_indexed_at } : {})
+      ...(row.last_indexed_at ? { lastIndexedAt: row.last_indexed_at } : {}),
+      locales: Object.fromEntries(localeRows.map((localeRow) => [localeRow.locale, localeRow.page_count]))
     };
   }
 
-  listPages(sourceId: string, limit: number, pathPrefix?: string): Array<{
+  listPages(sourceId: string, limit: number, pathPrefix?: string, locale = "all"): Array<{
     url: string;
+    locale: string;
     title: string;
     sectionCount: number;
     indexedAt: string;
   }> {
     const prefix = pathPrefix?.trim();
+    const filters = ["pages.source_id = ?"];
+    const values: Array<string | number> = [sourceId];
+    if (prefix) {
+      filters.push("instr(pages.url, ?) > 0");
+      values.push(prefix);
+    }
+    if (locale !== "all") {
+      filters.push("page_locale(pages.url) = ?");
+      values.push(locale);
+    }
+    values.push(limit);
     const sql = `
       SELECT pages.url, pages.title, pages.indexed_at, COUNT(sections.id) AS section_count
       FROM pages LEFT JOIN sections ON sections.page_id = pages.id
-      WHERE pages.source_id = ? ${prefix ? "AND instr(pages.url, ?) > 0" : ""}
+      WHERE ${filters.join(" AND ")}
       GROUP BY pages.id
       ORDER BY pages.url
       LIMIT ?
     `;
-    const values = prefix ? [sourceId, prefix, limit] : [sourceId, limit];
     const rows = this.database.prepare(sql).all(...values) as Array<{
       url: string;
       title: string;
@@ -245,17 +279,26 @@ export class PageIndexStore {
     }>;
     return rows.map((row) => ({
       url: row.url,
+      locale: localeFromUrl(row.url),
       title: row.title,
       sectionCount: row.section_count,
       indexedAt: row.indexed_at
     }));
   }
 
-  search(sourceId: string, query: string, limit: number, maxSnippetChars: number, urlContains?: string): SearchResult[] {
+  search(
+    sourceId: string,
+    query: string,
+    limit: number,
+    maxSnippetChars: number,
+    urlContains?: string,
+    locale = "all"
+  ): SearchResult[] {
     const match = ftsQuery(query);
     const urlFilter = urlContains?.trim();
     let rows: SectionRow[];
     if (match) {
+      const localeClause = locale === "all" ? "" : "AND page_locale(section_search.url) = ?";
       const sql = `
         SELECT section_search.url,
                section_search.page_title,
@@ -270,13 +313,18 @@ export class PageIndexStore {
         JOIN pages ON pages.id = sections.page_id
         WHERE section_search MATCH ? AND section_search.source_id = ?
           ${urlFilter ? "AND instr(section_search.url, ?) > 0" : ""}
+          ${localeClause}
         ORDER BY bm25(section_search, 0.0, 0.0, 0.0, 4.0, 2.0, 1.0)
         LIMIT ?
       `;
-      const values = urlFilter ? [match, sourceId, urlFilter, limit] : [match, sourceId, limit];
+      const values: Array<string | number> = [match, sourceId];
+      if (urlFilter) values.push(urlFilter);
+      if (locale !== "all") values.push(locale);
+      values.push(limit);
       rows = this.database.prepare(sql).all(...values) as SectionRow[];
     } else {
       const like = `%${query.trim()}%`;
+      const localeClause = locale === "all" ? "" : "AND page_locale(pages.url) = ?";
       const sql = `
         SELECT pages.url,
                pages.title AS page_title,
@@ -289,19 +337,22 @@ export class PageIndexStore {
         FROM sections JOIN pages ON pages.id = sections.page_id
         WHERE pages.source_id = ?
           ${urlFilter ? "AND instr(pages.url, ?) > 0" : ""}
+          ${localeClause}
           AND (pages.title LIKE ? OR sections.heading LIKE ? OR sections.body LIKE ?)
         ORDER BY CASE WHEN sections.heading LIKE ? THEN 0 WHEN pages.title LIKE ? THEN 1 ELSE 2 END,
                  pages.url,
                  sections.position
         LIMIT ?
       `;
-      const values = urlFilter
-        ? [sourceId, urlFilter, like, like, like, like, like, limit]
-        : [sourceId, like, like, like, like, like, limit];
+      const values: Array<string | number> = [sourceId];
+      if (urlFilter) values.push(urlFilter);
+      if (locale !== "all") values.push(locale);
+      values.push(like, like, like, like, like, limit);
       rows = this.database.prepare(sql).all(...values) as SectionRow[];
     }
     return rows.map((row) => ({
       url: row.url,
+      locale: localeFromUrl(row.url),
       title: row.page_title,
       heading: row.heading,
       level: row.level,
@@ -312,6 +363,7 @@ export class PageIndexStore {
 
   getPageContent(sourceId: string, url: string, heading: string | undefined, maxChars: number): {
     url: string;
+    locale: string;
     title: string;
     documentTitle: string;
     headings: Array<{ heading: string; level: number; anchor?: string }>;
@@ -341,6 +393,7 @@ export class PageIndexStore {
     const fullContent = selected.map((row) => `${"#".repeat(Math.max(1, row.level))} ${row.heading}\n${row.body}`.trim()).join("\n\n");
     return {
       url: first.url,
+      locale: localeFromUrl(first.url),
       title: first.page_title,
       documentTitle: first.document_title,
       headings: (heading ? selected : rows).map((row) => ({

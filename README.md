@@ -69,14 +69,16 @@ cwd = "C:/path/to/github-pages-retrieval-mcp"
 
 認証が `ready` になった後、次の順序で使用します。
 
-1. `refresh_pages_index` でバックグラウンド索引更新を開始します。ツールはすぐにジョブ情報を返します。
-2. `get_pages_index` で `refresh.status` が `completed` または `failed` になるまで進捗を確認し、索引件数やURL一覧を取得します。通常は小さい `limit` や `pathContains` を指定します。
-3. `search_pages_index` で必要なコンポーネント、API、設定を検索します。結果は上位のURL、見出し、短いスニペットだけです。多言語サイトでは `urlContains` に `.ja` などを指定して言語版を絞り込めます。
+1. `refresh_pages_index` で並列バックグラウンド索引更新を開始します。ツールはすぐにジョブ情報を返します。既定の `concurrency` は12で、端末負荷に応じて1〜32に調整できます。
+2. `get_pages_index` で `refresh.status` が `completed` または `failed` になるまで進捗を確認し、言語別件数やURL一覧を取得します。通常は小さい `limit`、`locale`、`pathContains` を指定します。
+3. `search_pages_index` で必要なコンポーネント、API、設定を検索します。結果は上位のURL、見出し、短いスニペットだけです。`locale` は `all`、`default`、`en`、`ja`、または検出済みの言語コードを指定できます。
 4. `fetch_indexed_section` に検索結果のURLと見出しを渡し、必要な節だけ取得します。同名見出しがある場合は `heading` に検索結果の `anchor` を渡します。
 
 索引は `stateDir/pages-index.sqlite` に逐次保存されます。再実行時は内容ハッシュで追加・変更・未変更を判定し、巡回が最後まで成功した場合だけサイトから消えたページを削除します。sitemap に依存せず、現在のナビゲーションリンクから構成を再検出します。MCPクライアントの通常のリクエストタイムアウトを避けるため、長い巡回はバックグラウンドで実行します。
 
-初回またはサイト更新時だけ `refresh_pages_index` を実行し、通常の質問では `search_pages_index` → `fetch_indexed_section` を使うことで、モデルへ渡す本文量を抑えられます。
+コンポーネントガイド（438ページ）では、認証済みSPA遷移と12並列巡回により約30〜50秒で索引を更新できました（同じ環境の逐次巡回は約5分半）。所要時間は端末性能、ネットワーク、認証サービスの応答によって変わります。
+
+初回またはサイト更新時だけ `refresh_pages_index` を実行し、通常の質問では `search_pages_index` → `fetch_indexed_section` を使うことで、モデルへ渡す本文量を抑えられます。`locale: all` は全言語横断、`locale: default` は接尾辞なしの標準言語版を意味します。
 
 ## セキュリティ境界
 
