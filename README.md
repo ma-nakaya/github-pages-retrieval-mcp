@@ -1,26 +1,26 @@
 # GitHub Pages Retrieval MCP
 
-Local stdio MCP server that retrieves private GitHub Pages through an authenticated, persistent browser profile. It treats the rendered Pages site as the only source and never uses the source repository or GitHub API.
+GitHub 認証・SAML・MFA が必要な Private GitHub Pages を、認証済みの専用ブラウザプロファイル経由で取得するローカル stdio MCP サーバーです。取得元はレンダリング済みの Pages サイトだけに限定し、ソースリポジトリや GitHub API は利用しません。
 
-The repository is an Agent Plugin for Claude Code and GitHub Copilot CLI. It bundles the MCP configuration and the `github-pages-retrieval` skill. Both clients start the same local stdio process.
+Claude Code と GitHub Copilot CLI 向けの Agent Plugin として配布します。MCP 設定と `github-pages-retrieval` スキルを同梱し、どちらのクライアントでも同じローカル stdio プロセスを起動します。
 
-## What it provides
+## 提供する機能
 
-- A separate persistent browser profile for each configured Pages source.
-- Explicit, visible reauthentication for GitHub, SAML, and MFA.
-- Allowlisted Pages-only retrieval through Playwright.
-- Local authentication-state tracking without exposing cookies or credentials through MCP.
+- Pages ソースごとの専用・永続ブラウザプロファイル
+- GitHub、SAML、MFA に対する明示的な対話認証
+- Playwright による許可済み Pages オリジンだけの取得
+- Cookie や認証情報を MCP に渡さないローカル認証状態管理
 
-## Setup
+## 単体で使う場合の準備
 
-1. Install Node.js 22 or newer, then run `npm install`.
-2. For standalone use, copy `config.example.json` to `config.local.json` and replace the example URL and origin.
-3. Run `npm start` from the repository root.
-4. Connect the command as a local stdio MCP server.
+1. Node.js 22 以降をインストールし、`npm install` を実行します。
+2. `config.example.json` を `config.local.json` にコピーし、対象 URL とオリジンを設定します。
+3. リポジトリ直下で `npm start` を実行します。
+4. 起動コマンドをローカル stdio MCP サーバーとして登録します。
 
-## Plugin installation
+## プラグインとしての導入
 
-Install dependencies once in the plugin directory before enabling it. The package intentionally does not run installation scripts automatically.
+有効化前に、プラグインディレクトリで一度だけ依存パッケージをインストールしてください。意図しない実行を避けるため、インストールスクリプトは自動実行しません。
 
 ### Claude Code
 
@@ -29,7 +29,7 @@ Install dependencies once in the plugin directory before enabling it. The packag
 /plugin install github-pages-retrieval@github-pages-retrieval-marketplace
 ```
 
-Claude Code supplies a private persistent data directory through `CLAUDE_PLUGIN_DATA`. Create `config.local.json` there using `config.example.json`, then use the bundled skill to start authentication.
+Claude Code は `CLAUDE_PLUGIN_DATA` を通じてプライベートな永続データディレクトリを提供します。そこに `config.example.json` をもとに `config.local.json` を作成し、同梱スキルから認証を開始します。
 
 ### GitHub Copilot CLI
 
@@ -38,13 +38,13 @@ copilot plugin marketplace add ma-nakaya/github-pages-retrieval-mcp
 copilot plugin install github-pages-retrieval@github-pages-retrieval-marketplace
 ```
 
-For durable browser state across plugin updates, set `GPR_PLUGIN_DATA` to a private local directory in Copilot's MCP server environment, then create `config.local.json` there from `config.example.json`. If it is unset, the server uses `.data/` inside the installed plugin directory.
+プラグイン更新後もブラウザ状態を維持するには、Copilot の MCP サーバー環境変数 `GPR_PLUGIN_DATA` に非公開のローカルディレクトリを設定し、そこへ `config.example.json` をもとに `config.local.json` を作成します。未設定時は、インストール済みプラグインディレクトリ内の `.data/` を使用します。
 
-The plugin targets local Copilot CLI. Copilot cloud agent and code review run in GitHub-hosted environments and cannot reuse a user's local interactive browser profile for GitHub/SAML/MFA.
+対象はローカルで実行する Copilot CLI です。Copilot cloud agent と code review は GitHub ホスト環境で動作するため、ユーザーのローカルな GitHub／SAML／MFA 用ブラウザプロファイルを再利用できません。
 
-For GitHub Copilot in an IDE, register the same local command from the installed plugin directory in the IDE's MCP configuration. The bundled plugin itself is currently validated for Copilot CLI.
+IDE 上の GitHub Copilot では、インストール済みプラグインディレクトリの同じローカルコマンドを IDE の MCP 設定へ登録してください。同梱プラグインは現在 Copilot CLI で検証しています。
 
-Example standalone configuration:
+単体利用時の設定例:
 
 ```toml
 [mcp_servers.github_pages_retrieval]
@@ -53,18 +53,18 @@ args = ["start"]
 cwd = "C:/path/to/github-pages-retrieval-mcp"
 ```
 
-## Authentication flow
+## 認証フロー
 
-1. Call `begin_source_reauth` for a source. A visible local browser opens at the configured Pages URL.
-2. Complete GitHub, SAML, and MFA in that browser. The server does not automate or receive those credentials.
-3. Call `validate_source_auth`. The server validates the protected Pages URL and stores only `ready` or `auth_required` plus its timestamp.
-4. Use `fetch_pages_content` for an allowlisted Pages URL.
+1. 対象ソースに `begin_source_reauth` を呼び出します。設定済みの Pages URL を表示したローカルブラウザが開きます。
+2. ブラウザで GitHub、SAML、MFA を完了します。サーバーがパスワードや MFA コードを自動操作・受信することはありません。
+3. 完了後に `validate_source_auth` を呼び出します。保護された Pages URL を検証し、`ready` または `auth_required` と日時だけを保存します。
+4. 許可済み Pages URL に対して `fetch_pages_content` を使用します。
 
-If authentication expires, `fetch_pages_content` records `auth_required`. Start the same explicit flow again.
+認証の有効期限が切れた場合、`fetch_pages_content` は `auth_required` を記録します。同じ明示的な認証フローをもう一度開始してください。
 
-## Safety boundaries
+## セキュリティ境界
 
-- Do not use a daily-use browser profile. The configured profile directory is a credential-bearing asset.
-- Keep `config.local.json` and `.data/` private; both are ignored by Git.
-- Do not point `allowedOrigins` at GitHub repository URLs. The MCP accepts only configured Pages origins.
-- This first version retrieves and returns one page. Crawling, chunking, and local full-text/vector indexing should be added after a real Pages source is validated.
+- 日常利用のブラウザプロファイルは使わないでください。設定するプロファイルディレクトリには認証情報が含まれます。
+- `config.local.json` と `.data/` は非公開で管理してください。どちらも Git の追跡対象外です。
+- `allowedOrigins` に GitHub リポジトリ URL を設定しないでください。MCP は設定済みの Pages オリジンだけを受け付けます。
+- 初版は 1 ページの取得・返却のみです。クロール、チャンク化、ローカル全文検索・ベクトル検索は、実際の Pages ソースで検証した後に追加します。
