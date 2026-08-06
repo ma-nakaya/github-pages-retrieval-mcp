@@ -10,10 +10,13 @@ Claude Code と GitHub Copilot CLI 向けの Agent Plugin として配布しま�
 - GitHub、SAML、MFA に対する明示的な対話認証
 - Playwright による許可済み Pages オリジンだけの取得
 - Cookie や認証情報を MCP に渡さないローカル認証状態管理
+- DOMリンク巡回によるサイト構成の自動検出と差分更新
+- SQLite FTS5 trigram による日本語・英語の見出し単位検索
+- 検索スニペットと節単位取得によるトークン量の抑制
 
 ## 単体で使う場合の準備
 
-1. Node.js 22 以降をインストールし、`npm install` を実行します。
+1. Node.js 22.5 以降をインストールし、`npm install` を実行します。
 2. `config.example.json` を `config.local.json` にコピーし、対象 URL とオリジンを設定します。
 3. リポジトリ直下で `npm start` を実行します。
 4. 起動コマンドをローカル stdio MCP サーバーとして登録します。
@@ -62,9 +65,23 @@ cwd = "C:/path/to/github-pages-retrieval-mcp"
 
 認証の有効期限が切れた場合、`fetch_pages_content` は `auth_required` を記録します。同じ明示的な認証フローをもう一度開始してください。
 
+## ローカル索引と検索
+
+認証が `ready` になった後、次の順序で使用します。
+
+1. `refresh_pages_index` でバックグラウンド索引更新を開始します。ツールはすぐにジョブ情報を返します。
+2. `get_pages_index` で `refresh.status` が `completed` または `failed` になるまで進捗を確認し、索引件数やURL一覧を取得します。通常は小さい `limit` や `pathContains` を指定します。
+3. `search_pages_index` で必要なコンポーネント、API、設定を検索します。結果は上位のURL、見出し、短いスニペットだけです。多言語サイトでは `urlContains` に `.ja` などを指定して言語版を絞り込めます。
+4. `fetch_indexed_section` に検索結果のURLと見出しを渡し、必要な節だけ取得します。同名見出しがある場合は `heading` に検索結果の `anchor` を渡します。
+
+索引は `stateDir/pages-index.sqlite` に逐次保存されます。再実行時は内容ハッシュで追加・変更・未変更を判定し、巡回が最後まで成功した場合だけサイトから消えたページを削除します。sitemap に依存せず、現在のナビゲーションリンクから構成を再検出します。MCPクライアントの通常のリクエストタイムアウトを避けるため、長い巡回はバックグラウンドで実行します。
+
+初回またはサイト更新時だけ `refresh_pages_index` を実行し、通常の質問では `search_pages_index` → `fetch_indexed_section` を使うことで、モデルへ渡す本文量を抑えられます。
+
 ## セキュリティ境界
 
 - 日常利用のブラウザプロファイルは使わないでください。設定するプロファイルディレクトリには認証情報が含まれます。
-- `config.local.json` と `.data/` は非公開で管理してください。どちらも Git の追跡対象外です。
+- `config.local.json`、ブラウザプロファイル、SQLite索引を含む `.data/` は非公開で管理してください。どちらも Git の追跡対象外です。
 - `allowedOrigins` に GitHub リポジトリ URL を設定しないでください。MCP は設定済みの Pages オリジンだけを受け付けます。
-- 初版は 1 ページの取得・返却のみです。クロール、チャンク化、ローカル全文検索・ベクトル検索は、実際の Pages ソースで検証した後に追加します。
+- 巡回対象は設定済み Pages オリジン内のHTMLページだけです。外部リンク、スクリプト、画像、PDFなどは索引しません。
+- 現在はローカル全文検索です。外部の埋め込みAPIやベクトルDBへ本文を送信しません。

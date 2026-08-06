@@ -1,9 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { join } from "node:path";
 import { z } from "zod";
 import { readAuthState, writeAuthState } from "./auth-state.js";
 import { BrowserFetcher } from "./browser-fetcher.js";
 import { assertAllowedUrl, findSource, loadConfig } from "./config.js";
+import { PageIndexStore } from "./page-index.js";
+import { canonicalizePageUrl, SiteIndexer, type RefreshIndexResult } from "./site-indexer.js";
 
 const server = new McpServer({
   name: "github-pages-retrieval",
@@ -13,6 +16,17 @@ const server = new McpServer({
 });
 
 const fetcher = new BrowserFetcher();
+const indexer = new SiteIndexer();
+type RefreshJob = {
+  jobId: string;
+  sourceId: string;
+  status: "running" | "completed" | "failed";
+  startedAt: string;
+  finishedAt?: string;
+  result?: RefreshIndexResult;
+  error?: string;
+};
+const refreshJobs = new Map<string, RefreshJob>();
 const sourceIdSchema = z.object({ sourceId: z.string().min(1) });
 
 function textResult(value: unknown) {
@@ -22,6 +36,10 @@ function textResult(value: unknown) {
 async function sourceFor(sourceId: string) {
   const config = await loadConfig();
   return { config, source: findSource(config, sourceId) };
+}
+
+function indexPath(stateDir: string): string {
+  return join(stateDir, "pages-index.sqlite");
 }
 
 server.registerTool("get_source_auth_status", {
@@ -73,6 +91,113 @@ server.registerTool("fetch_pages_content", {
     : { status: "auth_required" as const, checkedAt: new Date().toISOString(), reason: inspection.reason };
   await writeAuthState(config.stateDir, source.id, state);
   return textResult({ sourceId: source.id, ...inspection });
+});
+
+server.registerTool("refresh_pages_index", {
+  title: "Refresh Pages index",
+  description: "Starts a background crawl of allowlisted rendered Pages links. Returns immediately; poll get_pages_index for compact progress and final statistics.",
+  inputSchema: {
+    sourceId: z.string().min(1),
+    maxPages: z.number().int().min(1).max(2_000).default(500)
+  }
+}, async ({ sourceId, maxPages }) => {
+  const { config, source } = await sourceFor(sourceId);
+  const active = refreshJobs.get(source.id);
+  if (active?.status === "running") return textResult(active);
+
+  const job: RefreshJob = {
+    jobId: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    sourceId: source.id,
+    status: "running",
+    startedAt: new Date().toISOString()
+  };
+  refreshJobs.set(source.id, job);
+  void indexer.refresh(source, indexPath(config.stateDir), maxPages).then(async (result) => {
+    job.status = "completed";
+    job.finishedAt = new Date().toISOString();
+    job.result = result;
+    const checkedAt = new Date().toISOString();
+    await writeAuthState(config.stateDir, source.id, result.status === "ready"
+      ? { status: "ready", checkedAt }
+      : { status: "auth_required", checkedAt, reason: result.errors[0] ?? "Authentication is required." });
+  }).catch((error) => {
+    job.status = "failed";
+    job.finishedAt = new Date().toISOString();
+    job.error = error instanceof Error ? error.message : String(error);
+  });
+  return textResult(job);
+});
+
+server.registerTool("get_pages_index", {
+  title: "Get compact Pages index",
+  description: "Returns index status and a compact URL/title list. Use pathContains and a small limit to minimize tokens.",
+  inputSchema: {
+    sourceId: z.string().min(1),
+    pathContains: z.string().min(1).optional(),
+    limit: z.number().int().min(1).max(500).default(50)
+  }
+}, async ({ sourceId, pathContains, limit }) => {
+  const { config, source } = await sourceFor(sourceId);
+  const store = await PageIndexStore.open(indexPath(config.stateDir));
+  try {
+    const status = store.getStatus(source.id);
+    const pages = store.listPages(source.id, limit, pathContains);
+    return textResult({
+      sourceId: source.id,
+      ...status,
+      refresh: refreshJobs.get(source.id),
+      returned: pages.length,
+      pages
+    });
+  } finally {
+    store.close();
+  }
+});
+
+server.registerTool("search_pages_index", {
+  title: "Search Pages index",
+  description: "Searches the local Japanese/English trigram index and returns only top headings with bounded snippets. Refresh the index first when it is empty or stale.",
+  inputSchema: {
+    sourceId: z.string().min(1),
+    query: z.string().min(1),
+    urlContains: z.string().min(1).optional(),
+    limit: z.number().int().min(1).max(20).default(5),
+    maxSnippetChars: z.number().int().min(80).max(1_000).default(280)
+  }
+}, async ({ sourceId, query, urlContains, limit, maxSnippetChars }) => {
+  const { config, source } = await sourceFor(sourceId);
+  const store = await PageIndexStore.open(indexPath(config.stateDir));
+  try {
+    const status = store.getStatus(source.id);
+    const results = store.search(source.id, query, limit, maxSnippetChars, urlContains);
+    return textResult({ sourceId: source.id, query, urlContains, ...status, resultCount: results.length, results });
+  } finally {
+    store.close();
+  }
+});
+
+server.registerTool("fetch_indexed_section", {
+  title: "Fetch indexed page or section",
+  description: "Returns one cached page or exact heading/anchor with a strict character cap. Prefer a heading returned by search_pages_index to minimize tokens.",
+  inputSchema: {
+    sourceId: z.string().min(1),
+    url: z.string().url(),
+    heading: z.string().min(1).optional(),
+    maxChars: z.number().int().min(200).max(20_000).default(5_000)
+  }
+}, async ({ sourceId, url, heading, maxChars }) => {
+  const { config, source } = await sourceFor(sourceId);
+  const target = canonicalizePageUrl(source, url);
+  if (!target) throw new Error(`URL is not indexable for ${source.id}: ${url}`);
+  const store = await PageIndexStore.open(indexPath(config.stateDir));
+  try {
+    const result = store.getPageContent(source.id, target, heading, maxChars);
+    return textResult(result
+      ? { sourceId: source.id, found: true, ...result }
+      : { sourceId: source.id, found: false, url: target, heading });
+  } finally {
+    store.close();
+  }
 });
 
 await server.connect(new StdioServerTransport());
