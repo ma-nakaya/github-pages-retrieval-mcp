@@ -7,7 +7,9 @@
   "scripts": {
     "build": "tsc --noEmit",
     "start": "tsx src/index.ts",
-    "test": "npm run build"
+    "start:plugin": "node scripts/start-plugin.mjs",
+    "validate:plugin": "node scripts/validate-plugin.mjs",
+    "test": "npm run build && npm run validate:plugin"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

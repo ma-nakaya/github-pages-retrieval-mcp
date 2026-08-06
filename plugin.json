@@ -1,0 +1,13 @@
+{
+  "name": "github-pages-retrieval",
+  "description": "Retrieve authenticated private GitHub Pages through a local stdio MCP server.",
+  "version": "0.1.0",
+  "author": {
+    "name": "ma-nakaya",
+    "url": "https://github.com/ma-nakaya"
+  },
+  "repository": "https://github.com/ma-nakaya/github-pages-retrieval-mcp",
+  "keywords": ["github-pages", "retrieval", "saml", "stdio", "mcp"],
+  "skills": "skills/",
+  "mcpServers": "mcp/copilot.json"
+}

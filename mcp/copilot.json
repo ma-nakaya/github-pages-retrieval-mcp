@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "github-pages-retrieval": {
+      "type": "local",
+      "command": "node",
+      "args": ["scripts/start-plugin.mjs"],
+      "tools": ["*"]
+    }
+  }
+}

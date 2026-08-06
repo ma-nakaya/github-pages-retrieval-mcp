@@ -1,0 +1,18 @@
+{
+  "name": "github-pages-retrieval-marketplace",
+  "owner": {
+    "name": "ma-nakaya"
+  },
+  "metadata": {
+    "description": "Local authenticated GitHub Pages retrieval plugin.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "github-pages-retrieval",
+      "description": "Retrieve authenticated private GitHub Pages through a local stdio MCP server.",
+      "version": "0.1.0",
+      "source": "."
+    }
+  ]
+}
