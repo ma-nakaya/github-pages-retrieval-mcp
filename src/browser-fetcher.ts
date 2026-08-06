@@ -56,6 +56,13 @@ export class BrowserFetcher {
     const page = await context.newPage();
     try {
       await page.goto(target, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      const currentUrl = new URL(page.url());
+      if (currentUrl.origin === "https://github.com" && currentUrl.pathname === "/pages/auth") {
+        await page.waitForURL(
+          (url) => source.allowedOrigins.some((origin) => new URL(origin).origin === url.origin),
+          { waitUntil: "domcontentloaded", timeout: 10_000 }
+        ).catch(() => undefined);
+      }
       return await this.readPage(page, source, includeContent);
     } finally {
       await page.close();
