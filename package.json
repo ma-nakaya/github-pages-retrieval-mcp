@@ -9,7 +9,8 @@
     "start": "tsx src/index.ts",
     "start:plugin": "node scripts/start-plugin.mjs",
     "validate:plugin": "node scripts/validate-plugin.mjs",
-    "test": "npm run build && npm run validate:plugin"
+    "test:unit": "tsx --test test/page-index.test.ts",
+    "test": "npm run build && npm run test:unit && npm run validate:plugin"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -22,6 +23,6 @@
     "typescript": "^5.8.0"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.5.0"
   }
 }
