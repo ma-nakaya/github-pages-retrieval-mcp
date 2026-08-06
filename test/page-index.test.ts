@@ -34,15 +34,26 @@ const tablePage: IndexedPage = {
   ]
 };
 
+const otherButtonPage: IndexedPage = {
+  url: "https://patterns.example.test/component/button.ja",
+  title: "Button ボタンパターン",
+  documentTitle: "Component patterns",
+  sections: [
+    { position: 0, heading: "重複クリック防止", level: 2, anchor: "prevent-click", body: "画面全体で重複クリックを防止する共通パターン。" }
+  ]
+};
+
 test("SQLite trigram index searches Japanese sections and removes stale pages", async () => {
   const store = await PageIndexStore.open(":memory:");
   try {
     assert.equal(store.upsertPage(source.id, "run-1", buttonPage), "inserted");
     assert.equal(store.upsertPage(source.id, "run-1", tablePage), "inserted");
     assert.equal(store.upsertPage(source.id, "run-1", buttonPage), "unchanged");
+    assert.equal(store.upsertPage("patterns", "run-1", otherButtonPage), "inserted");
 
     const results = store.search(source.id, "重複クリック", 5, 120);
     assert.equal(results.length, 1);
+    assert.equal(results[0]?.sourceId, source.id);
     assert.equal(results[0]?.heading, "重複クリック防止");
     assert.match(results[0]?.snippet ?? "", /重複クリック/u);
     assert.equal(store.search(source.id, "重複クリック", 5, 120, ".en").length, 0);
@@ -51,6 +62,13 @@ test("SQLite trigram index searches Japanese sections and removes stale pages", 
     assert.equal(store.listPages(source.id, 10, undefined, "ja").length, 2);
     assert.equal(store.listPages(source.id, 10, undefined, "default").length, 0);
     assert.deepEqual(store.getStatus(source.id).locales, { ja: 2 });
+
+    const crossSourceResults = store.search("all", "重複クリック", 5, 120);
+    assert.equal(crossSourceResults.length, 2);
+    assert.deepEqual(new Set(crossSourceResults.map((result) => result.sourceId)), new Set(["docs", "patterns"]));
+    assert.equal(store.search("all", "共", 5, 120)[0]?.sourceId, "patterns");
+    assert.equal(store.getStatus("all").pageCount, 3);
+    assert.deepEqual(store.getStatus("all").locales, { ja: 3 });
 
     const section = store.getPageContent(source.id, buttonPage.url, "prevent-click", 500);
     assert.equal(section?.locale, "ja");
@@ -109,6 +127,10 @@ test("initial setup safely creates and reuses a source configuration from a Page
     await assert.rejects(
       () => configureSource("https://another.example.test/", "docs-example-test"),
       /already configured/u
+    );
+    await assert.rejects(
+      () => configureSource("https://reserved.example.test/", "all"),
+      /reserved for cross-site search/u
     );
     await assert.rejects(() => configureSource("http://insecure.example.test/"), /must use HTTPS/u);
   } finally {

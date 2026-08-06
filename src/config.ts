@@ -115,6 +115,7 @@ export async function configureSource(startUrl: string, requestedSourceId?: stri
 
   const baseId = requestedSourceId ? sourceIdSchema.parse(requestedSourceId) : generatedSourceId(url);
   const usedIds = new Set(stored?.sources.map((source) => source.id) ?? []);
+  if (baseId === "all") throw new Error("Source id is reserved for cross-site search: all");
   if (requestedSourceId && usedIds.has(baseId)) throw new Error(`Source id is already configured: ${baseId}`);
   let sourceId = baseId;
   if (!requestedSourceId) {

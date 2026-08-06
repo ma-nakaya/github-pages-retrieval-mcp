@@ -12,7 +12,7 @@ const server = new McpServer({
   name: "github-pages-retrieval",
   version: "0.1.0"
 }, {
-  instructions: "Private GitHub Pages retrieval only. Call list_pages_sources first. If no source is configured, ask the user for the exact Pages site URL, then call configure_pages_source. The server never accesses a source repository or GitHub API."
+  instructions: "Private GitHub Pages retrieval only. Call list_pages_sources first. If no source is configured, ask the user for the exact Pages site URL, then call configure_pages_source. Use sourceId all only when the user asks to search across every configured source. The server never accesses a source repository or GitHub API."
 });
 
 const fetcher = new BrowserFetcher();
@@ -198,7 +198,7 @@ server.registerTool("get_pages_index", {
 
 server.registerTool("search_pages_index", {
   title: "Search Pages index",
-  description: "Searches the local multilingual trigram index and returns only top headings with bounded snippets. Set locale to all, default, en, ja, or another discovered locale.",
+  description: "Searches one source or all configured sources in the local multilingual trigram index. Use sourceId all for cross-site search; each result includes its actual sourceId for fetch_indexed_section.",
   inputSchema: {
     sourceId: z.string().min(1),
     query: z.string().min(1),
@@ -208,12 +208,16 @@ server.registerTool("search_pages_index", {
     maxSnippetChars: z.number().int().min(80).max(1_000).default(280)
   }
 }, async ({ sourceId, query, urlContains, locale, limit, maxSnippetChars }) => {
-  const { config, source } = await sourceFor(sourceId);
+  const config = await loadConfig();
+  const resolvedSourceId = sourceId === "all" ? "all" : findSource(config, sourceId).id;
+  const searchedSourceIds = resolvedSourceId === "all"
+    ? config.sources.map((source) => source.id)
+    : [resolvedSourceId];
   const store = await PageIndexStore.open(indexPath(config.stateDir));
   try {
-    const status = store.getStatus(source.id);
-    const results = store.search(source.id, query, limit, maxSnippetChars, urlContains, locale);
-    return textResult({ sourceId: source.id, query, urlContains, locale, ...status, resultCount: results.length, results });
+    const status = store.getStatus(resolvedSourceId);
+    const results = store.search(resolvedSourceId, query, limit, maxSnippetChars, urlContains, locale);
+    return textResult({ sourceId: resolvedSourceId, searchedSourceIds, query, urlContains, locale, ...status, resultCount: results.length, results });
   } finally {
     store.close();
   }

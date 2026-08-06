@@ -36,7 +36,7 @@ Never request, transmit, store, or automate passwords, MFA codes, security keys,
 
 - After authentication is ready, call `get_pages_index` with a small limit to inspect index status.
 - If the index is empty or the user asks for current site content, call `refresh_pages_index`. It starts a background job; poll `get_pages_index` until `refresh.status` is `completed` or `failed`. Do not refresh for every question.
-- Call `search_pages_index` first with the user's component, API, or configuration terms. Keep the default small result and snippet limits unless broader recall is necessary. Set `locale` to `all`, `default`, `en`, `ja`, or another locale reported by `get_pages_index`.
+- Call `search_pages_index` first with the user's component, API, or configuration terms. Search the relevant source by default; set `sourceId` to `all` only when the user asks for a cross-site search. Each cross-site result contains the actual source id needed by `fetch_indexed_section`. Keep the default small result and snippet limits unless broader recall is necessary. Set `locale` to `all`, `default`, `en`, `ja`, or another locale reported by `get_pages_index`.
 - Call `fetch_indexed_section` with the best result URL and heading; use the result `anchor` as the `heading` input when duplicate heading names may exist. Increase `maxChars` only when the returned section is truncated and more detail is needed.
 - Use `fetch_pages_content` only when a fresh, unindexed page is explicitly needed.
 - If any retrieval tool reports `auth_required`, stop retrieval and use the authentication workflow.
@@ -46,6 +46,6 @@ Never request, transmit, store, or automate passwords, MFA codes, security keys,
 ## Index behavior
 
 - `refresh_pages_index` follows rendered links only inside configured Pages origins and stores pages as heading-level sections in local SQLite.
-- `search_pages_index` uses local FTS5 trigram search for Japanese and English; it does not call an embedding service.
+- `search_pages_index` uses local FTS5 trigram search for multilingual text; it does not call an embedding service.
 - A successful complete refresh removes pages no longer linked by the site. A truncated or partially failed refresh preserves older entries.
 - Prefer search snippets and one fetched section over returning whole pages. This is the primary token-control mechanism.
