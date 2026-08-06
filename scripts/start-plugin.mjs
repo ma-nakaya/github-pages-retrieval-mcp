@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -9,6 +10,21 @@ const pluginData =
   process.env.PLUGIN_DATA ??
   join(pluginRoot, ".data");
 const command = process.platform === "win32" ? "npx.cmd" : "npx";
+
+if (!existsSync(join(pluginRoot, "node_modules", "tsx", "package.json"))) {
+  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+  const install = spawnSync(npm, ["ci"], {
+    cwd: pluginRoot,
+    env: process.env,
+    stdio: "inherit"
+  });
+
+  if (install.error) throw install.error;
+  if (install.status !== 0) {
+    process.exit(install.status ?? 1);
+  }
+}
+
 const child = spawn(command, ["tsx", "src/index.ts"], {
   cwd: pluginRoot,
   env: {
