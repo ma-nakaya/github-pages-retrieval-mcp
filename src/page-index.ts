@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { ALL_SOURCES_ID } from "./source-id.js";
 
 export type IndexedSection = {
   position: number;
@@ -62,6 +63,7 @@ function pageHash(page: IndexedPage): string {
 
 function ftsQuery(value: string): string | undefined {
   const terms = value.trim().split(/\s+/u).filter((term) => [...term].length >= 3);
+  // FTS5 trigram cannot match shorter terms; undefined selects the LIKE fallback.
   if (terms.length === 0) return undefined;
   return terms.map((term) => `"${term.replaceAll('"', '""')}"`).join(" OR ");
 }
@@ -226,8 +228,8 @@ export class PageIndexStore {
     lastIndexedAt?: string;
     locales: Record<string, number>;
   } {
-    const sourceFilter = sourceId === "all" ? "" : "WHERE pages.source_id = ?";
-    const sourceValues = sourceId === "all" ? [] : [sourceId];
+    const sourceFilter = sourceId === ALL_SOURCES_ID ? "" : "WHERE pages.source_id = ?";
+    const sourceValues = sourceId === ALL_SOURCES_ID ? [] : [sourceId];
     const row = this.database.prepare(`
       SELECT COUNT(DISTINCT pages.id) AS page_count,
              COUNT(sections.id) AS section_count,
@@ -235,7 +237,7 @@ export class PageIndexStore {
       FROM pages LEFT JOIN sections ON sections.page_id = pages.id
       ${sourceFilter}
     `).get(...sourceValues) as { page_count: number; section_count: number; last_indexed_at: string | null };
-    const localeFilter = sourceId === "all" ? "" : "WHERE source_id = ?";
+    const localeFilter = sourceId === ALL_SOURCES_ID ? "" : "WHERE source_id = ?";
     const localeRows = this.database.prepare(`
       SELECT page_locale(url) AS locale, COUNT(*) AS page_count
       FROM pages ${localeFilter}
@@ -301,7 +303,7 @@ export class PageIndexStore {
   ): SearchResult[] {
     const match = ftsQuery(query);
     const urlFilter = urlContains?.trim();
-    const allSources = sourceId === "all";
+    const allSources = sourceId === ALL_SOURCES_ID;
     let rows: SectionRow[];
     if (match) {
       const sourceClause = allSources ? "" : "AND section_search.source_id = ?";

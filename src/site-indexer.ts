@@ -1,7 +1,8 @@
 import { chromium, type Page } from "playwright";
 import type { SourceConfig } from "./config.js";
-import { assertAllowedUrl } from "./config.js";
+import { assertAllowedUrl, isAllowedUrl } from "./config.js";
 import { localeFromUrl, PageIndexStore, type IndexedPage } from "./page-index.js";
+import { waitForPagesAuthRedirect } from "./pages-auth.js";
 
 const ignoredExtensions = new Set([
   ".avif", ".css", ".gif", ".ico", ".jpeg", ".jpg", ".js", ".json", ".map",
@@ -24,19 +25,8 @@ export function canonicalizePageUrl(source: SourceConfig, value: string): string
   return url.toString();
 }
 
-async function waitForProtectedPagesRedirect(page: Page, source: SourceConfig): Promise<void> {
-  const current = new URL(page.url());
-  if (current.origin !== "https://github.com" || current.pathname !== "/pages/auth") return;
-  await page.waitForURL(
-    (url) => source.allowedOrigins.some((origin) => new URL(origin).origin === url.origin),
-    { waitUntil: "domcontentloaded", timeout: 10_000 }
-  ).catch(() => undefined);
-}
-
 function isAuthenticatedPage(page: Page, source: SourceConfig): boolean {
-  const current = new URL(page.url());
-  const allowed = source.allowedOrigins.some((origin) => new URL(origin).origin === current.origin);
-  return allowed;
+  return isAllowedUrl(source, page.url());
 }
 
 async function documentSignature(page: Page): Promise<string> {
@@ -74,14 +64,9 @@ async function navigateForIndex(
   target: string
 ): Promise<{ mode: "spa" | "full"; previousPageSignature?: string }> {
   const current = page.url();
-  const currentAllowed = source.allowedOrigins.some((origin) => {
-    try {
-      return new URL(origin).origin === new URL(current).origin;
-    } catch {
-      return false;
-    }
-  });
+  const currentAllowed = isAllowedUrl(source, current);
   if (currentAllowed && localeFromUrl(current) === localeFromUrl(target)) {
+    // Same-locale SPA navigation avoids repeating the protected Pages redirect.
     const previousPageSignature = await documentSignature(page);
     const targetUrl = new URL(target);
     for (const href of [targetUrl.pathname, target]) {
@@ -102,7 +87,7 @@ async function navigateForIndex(
   }
 
   await page.goto(target, { waitUntil: "domcontentloaded", timeout: 30_000 });
-  await waitForProtectedPagesRedirect(page, source);
+  await waitForPagesAuthRedirect(page, source);
   return { mode: "full" };
 }
 
@@ -284,6 +269,7 @@ export class SiteIndexer {
       await Promise.allSettled([...inFlight.keys()]);
 
       const truncated = queue.length > 0 || queued.size > visited.size;
+      // Keep older cache entries unless the crawl completed without gaps.
       if (authenticated && failed === 0 && !truncated) {
         removed = store.removePagesNotSeen(source.id, runId);
       }

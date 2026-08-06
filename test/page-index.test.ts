@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { readAuthState, writeAuthState } from "../src/auth-state.js";
 import { configureSource, loadConfig, loadConfigIfPresent } from "../src/config.js";
 import type { SourceConfig } from "../src/config.js";
 import { localeFromUrl, PageIndexStore, type IndexedPage } from "../src/page-index.js";
@@ -18,7 +19,7 @@ const source: SourceConfig = {
 const buttonPage: IndexedPage = {
   url: "https://docs.example.test/component/button.ja",
   title: "Button ボタン",
-  documentTitle: "Example UI",
+  documentTitle: "Component guide",
   sections: [
     { position: 0, heading: "Button ボタン", level: 1, anchor: "button", body: "ボタンコンポーネントの概要。" },
     { position: 1, heading: "重複クリック防止", level: 2, anchor: "prevent-click", body: "連続した重複クリックを防止する設定。" }
@@ -28,7 +29,7 @@ const buttonPage: IndexedPage = {
 const tablePage: IndexedPage = {
   url: "https://docs.example.test/component/table.ja",
   title: "Table テーブル",
-  documentTitle: "Example UI",
+  documentTitle: "Component guide",
   sections: [
     { position: 0, heading: "Table テーブル", level: 1, anchor: "table", body: "大量データを表示するテーブル。" }
   ]
@@ -136,6 +137,21 @@ test("initial setup safely creates and reuses a source configuration from a Page
   } finally {
     if (previousPath === undefined) delete process.env.GPR_CONFIG_PATH;
     else process.env.GPR_CONFIG_PATH = previousPath;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("parallel auth-state writes preserve every source", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "gpr-auth-state-"));
+  const checkedAt = "2026-01-01T00:00:00.000Z";
+  try {
+    await Promise.all([
+      writeAuthState(directory, "docs", { status: "ready", checkedAt }),
+      writeAuthState(directory, "patterns", { status: "auth_required", checkedAt, reason: "Expired" })
+    ]);
+    assert.equal((await readAuthState(directory, "docs")).status, "ready");
+    assert.equal((await readAuthState(directory, "patterns")).status, "auth_required");
+  } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });

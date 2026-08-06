@@ -7,6 +7,7 @@ import { BrowserFetcher } from "./browser-fetcher.js";
 import { assertAllowedUrl, configureSource, findSource, loadConfig, loadConfigIfPresent } from "./config.js";
 import { PageIndexStore } from "./page-index.js";
 import { canonicalizePageUrl, SiteIndexer, type RefreshIndexResult } from "./site-indexer.js";
+import { ALL_SOURCES_ID } from "./source-id.js";
 
 const server = new McpServer({
   name: "github-pages-retrieval",
@@ -209,8 +210,8 @@ server.registerTool("search_pages_index", {
   }
 }, async ({ sourceId, query, urlContains, locale, limit, maxSnippetChars }) => {
   const config = await loadConfig();
-  const resolvedSourceId = sourceId === "all" ? "all" : findSource(config, sourceId).id;
-  const searchedSourceIds = resolvedSourceId === "all"
+  const resolvedSourceId = sourceId === ALL_SOURCES_ID ? ALL_SOURCES_ID : findSource(config, sourceId).id;
+  const searchedSourceIds = resolvedSourceId === ALL_SOURCES_ID
     ? config.sources.map((source) => source.id)
     : [resolvedSourceId];
   const store = await PageIndexStore.open(indexPath(config.stateDir));
