@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { readAuthState, writeAuthState } from "./auth-state.js";
 import { BrowserFetcher } from "./browser-fetcher.js";
-import { assertAllowedUrl, findSource, loadConfig } from "./config.js";
+import { assertAllowedUrl, configureSource, findSource, loadConfig, loadConfigIfPresent } from "./config.js";
 import { PageIndexStore } from "./page-index.js";
 import { canonicalizePageUrl, SiteIndexer, type RefreshIndexResult } from "./site-indexer.js";
 
@@ -12,7 +12,7 @@ const server = new McpServer({
   name: "github-pages-retrieval",
   version: "0.1.0"
 }, {
-  instructions: "Private GitHub Pages retrieval only. The server never accesses a source repository or GitHub API."
+  instructions: "Private GitHub Pages retrieval only. Call list_pages_sources first. If no source is configured, ask the user for the exact Pages site URL, then call configure_pages_source. The server never accesses a source repository or GitHub API."
 });
 
 const fetcher = new BrowserFetcher();
@@ -40,6 +40,43 @@ async function sourceFor(sourceId: string) {
   const config = await loadConfig();
   return { config, source: findSource(config, sourceId) };
 }
+
+server.registerTool("list_pages_sources", {
+  title: "List configured Pages sources",
+  description: "Checks whether any Pages search targets are configured. Call this before authentication or search so an agent can request a site URL when the list is empty.",
+  inputSchema: {}
+}, async () => {
+  const config = await loadConfigIfPresent();
+  const sources = config?.sources.map(({ id, startUrl, authProbeUrl, allowedOrigins }) => ({
+    id,
+    startUrl,
+    ...(authProbeUrl ? { authProbeUrl } : {}),
+    allowedOrigins
+  })) ?? [];
+  return textResult({
+    configured: sources.length > 0,
+    sourceCount: sources.length,
+    sources,
+    ...(sources.length === 0 ? { nextAction: "Ask the user for the exact GitHub Pages site URL, then call configure_pages_source." } : {})
+  });
+});
+
+server.registerTool("configure_pages_source", {
+  title: "Configure a Pages source",
+  description: "Persists a user-provided HTTPS Pages URL as a local search target, derives its exact origin allowlist, and creates a dedicated browser-profile path. Existing configuration is never replaced.",
+  inputSchema: {
+    startUrl: z.string().url(),
+    sourceId: z.string().regex(/^[a-z0-9][a-z0-9-]*$/u).optional()
+  }
+}, async ({ startUrl, sourceId }) => {
+  const result = await configureSource(startUrl, sourceId);
+  return textResult({
+    ...result,
+    nextAction: result.created
+      ? "Call get_source_auth_status for this source, then begin_source_reauth if authentication is required."
+      : "Use the existing source id; this origin was already configured."
+  });
+});
 
 function indexPath(stateDir: string): string {
   return join(stateDir, "pages-index.sqlite");

@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
+import { configureSource, loadConfig, loadConfigIfPresent } from "../src/config.js";
 import type { SourceConfig } from "../src/config.js";
 import { localeFromUrl, PageIndexStore, type IndexedPage } from "../src/page-index.js";
 import { canonicalizePageUrl } from "../src/site-indexer.js";
@@ -73,4 +77,43 @@ test("crawler canonicalizes allowlisted page URLs and rejects assets", () => {
   assert.equal(localeFromUrl("https://docs.example.test/component/button.en"), "en");
   assert.equal(localeFromUrl("https://docs.example.test/component/button.ja"), "ja");
   assert.equal(localeFromUrl("https://docs.example.test/component/button.zh-CN"), "zh-cn");
+});
+
+test("initial setup safely creates and reuses a source configuration from a Pages URL", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "gpr-config-"));
+  const path = join(directory, "plugin-data", "config.local.json");
+  const previousPath = process.env.GPR_CONFIG_PATH;
+  process.env.GPR_CONFIG_PATH = path;
+  try {
+    assert.equal(await loadConfigIfPresent(), undefined);
+    const created = await configureSource("https://docs.example.test/guide/overview.ja#usage");
+    assert.equal(created.created, true);
+    assert.equal(created.source.id, "docs-example-test");
+    assert.equal(created.source.startUrl, "https://docs.example.test/guide/overview.ja");
+    assert.deepEqual(created.source.allowedOrigins, ["https://docs.example.test"]);
+
+    const stored = JSON.parse(await readFile(path, "utf8")) as {
+      sources: Array<{ profileDir: string }>;
+    };
+    assert.equal(stored.sources[0]?.profileDir, join(".data", "browser-profiles", "docs-example-test"));
+    const loaded = await loadConfig();
+    assert.equal(loaded.sources.length, 1);
+
+    const duplicate = await configureSource("https://docs.example.test/component/button.ja");
+    assert.equal(duplicate.created, false);
+    assert.equal((await loadConfig()).sources.length, 1);
+
+    const second = await configureSource("https://second-guide.pages.github.io/guide/overview.ja");
+    assert.equal(second.source.id, "second-guide");
+    assert.equal((await loadConfig()).sources.length, 2);
+    await assert.rejects(
+      () => configureSource("https://another.example.test/", "docs-example-test"),
+      /already configured/u
+    );
+    await assert.rejects(() => configureSource("http://insecure.example.test/"), /must use HTTPS/u);
+  } finally {
+    if (previousPath === undefined) delete process.env.GPR_CONFIG_PATH;
+    else process.env.GPR_CONFIG_PATH = previousPath;
+    await rm(directory, { recursive: true, force: true });
+  }
 });
