@@ -42,7 +42,7 @@ copilot plugin install github-pages-retrieval@github-pages-retrieval-marketplace
 このPrivate Pagesを検索対象にして:
 https://example.github.io/private-docs/
 
-日本語版のTableコンポーネントで、行選択の設定を調べて
+日本語版のテーブルコンポーネントで、行選択の設定を調べて
 ```
 
 ## 検索の仕組み
@@ -50,8 +50,6 @@ https://example.github.io/private-docs/
 サイトマップには依存せず、画面上のナビゲーションリンクからページ構成を検出します。検索索引はローカルのSQLiteに保存し、サイト更新時だけ差分更新します。
 
 検索結果はURL、見出し、短いスニペットを先に返し、必要な節だけ取得します。ページ全文を毎回モデルへ渡さないため、トークン消費を抑えられます。
-
-コンポーネントガイドでは438ページを検出し、12並列で約30〜50秒でした。所要時間は端末性能、ネットワーク、認証サービスによって変わります。
 
 ## ローカルデータとセキュリティ
 
