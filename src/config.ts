@@ -1,6 +1,7 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { z } from "zod";
+import { isMissingFile, readJsonFile, writeJsonFile } from "./json-file.js";
+import { ALL_SOURCES_ID } from "./source-id.js";
 
 const sourceIdSchema = z.string().min(1).regex(/^[a-z0-9][a-z0-9-]*$/);
 
@@ -42,16 +43,14 @@ function configurationError(path: string, error: unknown): Error {
   return new Error(`Unable to load ${path}: ${reason}`);
 }
 
-function isMissingFile(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
+async function readStoredConfig(path: string): Promise<AppConfig> {
+  return configSchema.parse(await readJsonFile(path));
 }
 
 export async function loadConfig(): Promise<AppConfig> {
   const path = configPath();
   try {
-    const raw = await readFile(path, "utf8");
-    const parsed = configSchema.parse(JSON.parse(raw));
-    return resolvedConfig(parsed, path);
+    return resolvedConfig(await readStoredConfig(path), path);
   } catch (error) {
     throw configurationError(path, error);
   }
@@ -60,8 +59,7 @@ export async function loadConfig(): Promise<AppConfig> {
 export async function loadConfigIfPresent(): Promise<AppConfig | undefined> {
   const path = configPath();
   try {
-    const raw = await readFile(path, "utf8");
-    return resolvedConfig(configSchema.parse(JSON.parse(raw)), path);
+    return resolvedConfig(await readStoredConfig(path), path);
   } catch (error) {
     if (isMissingFile(error)) return undefined;
     throw configurationError(path, error);
@@ -104,18 +102,17 @@ export async function configureSource(startUrl: string, requestedSourceId?: stri
   const url = normalizedStartUrl(startUrl);
   let stored: AppConfig | undefined;
   try {
-    const raw = await readFile(path, "utf8");
-    stored = configSchema.parse(JSON.parse(raw));
+    stored = await readStoredConfig(path);
   } catch (error) {
     if (!isMissingFile(error)) throw configurationError(path, error);
   }
 
-  const existing = stored?.sources.find((source) => source.allowedOrigins.some((origin) => new URL(origin).origin === url.origin));
+  const existing = stored?.sources.find((source) => isAllowedUrl(source, url));
   if (existing) return { created: false, source: summary(existing) };
 
   const baseId = requestedSourceId ? sourceIdSchema.parse(requestedSourceId) : generatedSourceId(url);
   const usedIds = new Set(stored?.sources.map((source) => source.id) ?? []);
-  if (baseId === "all") throw new Error("Source id is reserved for cross-site search: all");
+  if (baseId === ALL_SOURCES_ID) throw new Error(`Source id is reserved for cross-site search: ${ALL_SOURCES_ID}`);
   if (requestedSourceId && usedIds.has(baseId)) throw new Error(`Source id is already configured: ${baseId}`);
   let sourceId = baseId;
   if (!requestedSourceId) {
@@ -131,10 +128,7 @@ export async function configureSource(startUrl: string, requestedSourceId?: stri
     profileDir: join(stateDir, "browser-profiles", sourceId)
   });
   const next = configSchema.parse({ stateDir, sources: [...(stored?.sources ?? []), source] });
-  await mkdir(dirname(path), { recursive: true });
-  const temporaryPath = `${path}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(temporaryPath, `${JSON.stringify(next, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  await rename(temporaryPath, path);
+  await writeJsonFile(path, next);
   return { created: true, source: summary(source) };
 }
 
@@ -148,9 +142,17 @@ export function findSource(config: AppConfig, sourceId: string): SourceConfig {
 
 export function assertAllowedUrl(source: SourceConfig, value: string): URL {
   const url = new URL(value);
-  const allowed = source.allowedOrigins.some((origin) => new URL(origin).origin === url.origin);
-  if (!allowed) {
+  if (!isAllowedUrl(source, url)) {
     throw new Error(`URL origin is not allowlisted for ${source.id}: ${url.origin}`);
   }
   return url;
+}
+
+export function isAllowedUrl(source: SourceConfig, value: string | URL): boolean {
+  try {
+    const origin = (value instanceof URL ? value : new URL(value)).origin;
+    return source.allowedOrigins.some((allowed) => new URL(allowed).origin === origin);
+  } catch {
+    return false;
+  }
 }

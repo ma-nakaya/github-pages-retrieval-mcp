@@ -2,7 +2,8 @@ import { mkdir } from "node:fs/promises";
 import type { BrowserContext, Page } from "playwright";
 import { chromium } from "playwright";
 import type { SourceConfig } from "./config.js";
-import { assertAllowedUrl } from "./config.js";
+import { assertAllowedUrl, isAllowedUrl } from "./config.js";
+import { waitForPagesAuthRedirect } from "./pages-auth.js";
 
 export type PageInspection = {
   authenticated: boolean;
@@ -56,13 +57,7 @@ export class BrowserFetcher {
     const page = await context.newPage();
     try {
       await page.goto(target, { waitUntil: "domcontentloaded", timeout: 30_000 });
-      const currentUrl = new URL(page.url());
-      if (currentUrl.origin === "https://github.com" && currentUrl.pathname === "/pages/auth") {
-        await page.waitForURL(
-          (url) => source.allowedOrigins.some((origin) => new URL(origin).origin === url.origin),
-          { waitUntil: "domcontentloaded", timeout: 10_000 }
-        ).catch(() => undefined);
-      }
+      await waitForPagesAuthRedirect(page, source);
       return await this.readPage(page, source, includeContent);
     } finally {
       await page.close();
@@ -72,7 +67,7 @@ export class BrowserFetcher {
   private async readPage(page: Page, source: SourceConfig, includeContent: boolean): Promise<PageInspection> {
     const currentUrl = page.url();
     const title = await page.title().catch(() => "");
-    const isOutsideAllowedOrigin = !source.allowedOrigins.some((origin) => new URL(origin).origin === new URL(currentUrl).origin);
+    const isOutsideAllowedOrigin = !isAllowedUrl(source, currentUrl);
     const likelyAuthPage = authUrlPattern.test(currentUrl) || /sign in|single sign-on|saml/i.test(title);
     if (isOutsideAllowedOrigin || likelyAuthPage) {
       return { authenticated: false, url: currentUrl, title, reason: "Redirected to an authentication page." };

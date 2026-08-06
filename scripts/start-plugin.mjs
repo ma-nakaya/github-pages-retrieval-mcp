@@ -20,8 +20,7 @@ function runSetup(commandName, args) {
     stdio: ["ignore", "pipe", "pipe"]
   });
 
-  // MCP uses stdout for JSON-RPC. Forward setup output to stderr so package
-  // installation and browser downloads cannot corrupt the protocol stream.
+  // Keep setup logs off the JSON-RPC stdout channel.
   if (result.stdout) process.stderr.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
   if (result.error) throw result.error;

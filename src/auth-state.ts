@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { isMissingFile, readJsonFile, writeJsonFile } from "./json-file.js";
 
 export type AuthState = {
   status: "unknown" | "ready" | "auth_required";
@@ -8,32 +8,34 @@ export type AuthState = {
 };
 
 type StateFile = Record<string, AuthState>;
+const unknownCheckedAt = new Date(0).toISOString();
+let pendingWrite = Promise.resolve();
 
 function statePath(stateDir: string): string {
   return join(stateDir, "auth-state.json");
 }
 
 export async function readAuthState(stateDir: string, sourceId: string): Promise<AuthState> {
+  const states = await readStateFile(stateDir);
+  return states[sourceId] ?? { status: "unknown", checkedAt: unknownCheckedAt };
+}
+
+async function readStateFile(stateDir: string): Promise<StateFile> {
   try {
-    const raw = await readFile(statePath(stateDir), "utf8");
-    const states = JSON.parse(raw) as StateFile;
-    return states[sourceId] ?? { status: "unknown", checkedAt: new Date(0).toISOString() };
+    return await readJsonFile<StateFile>(statePath(stateDir));
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { status: "unknown", checkedAt: new Date(0).toISOString() };
-    }
+    if (isMissingFile(error)) return {};
     throw error;
   }
 }
 
 export async function writeAuthState(stateDir: string, sourceId: string, state: AuthState): Promise<void> {
-  await mkdir(stateDir, { recursive: true });
-  let states: StateFile = {};
-  try {
-    states = JSON.parse(await readFile(statePath(stateDir), "utf8")) as StateFile;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-  states[sourceId] = state;
-  await writeFile(statePath(stateDir), `${JSON.stringify(states, null, 2)}\n`, { mode: 0o600 });
+  // Serialize read-modify-write operations so parallel source refreshes cannot lose state.
+  const operation = pendingWrite.then(async () => {
+    const states = await readStateFile(stateDir);
+    states[sourceId] = state;
+    await writeJsonFile(statePath(stateDir), states);
+  });
+  pendingWrite = operation.catch(() => undefined);
+  await operation;
 }
