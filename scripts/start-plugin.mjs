@@ -9,23 +9,36 @@ const pluginData =
   process.env.CLAUDE_PLUGIN_DATA ??
   process.env.PLUGIN_DATA ??
   join(pluginRoot, ".data");
-const command = process.platform === "win32" ? "npx.cmd" : "npx";
+const isWindows = process.platform === "win32";
 
-if (!existsSync(join(pluginRoot, "node_modules", "tsx", "package.json"))) {
-  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  const install = spawnSync(npm, ["ci"], {
+function runSetup(commandName, args) {
+  const result = spawnSync(commandName, args, {
     cwd: pluginRoot,
     env: process.env,
-    stdio: "inherit"
+    encoding: "utf8",
+    shell: isWindows && commandName.endsWith(".cmd"),
+    stdio: ["ignore", "pipe", "pipe"]
   });
 
-  if (install.error) throw install.error;
-  if (install.status !== 0) {
-    process.exit(install.status ?? 1);
-  }
+  // MCP uses stdout for JSON-RPC. Forward setup output to stderr so package
+  // installation and browser downloads cannot corrupt the protocol stream.
+  if (result.stdout) process.stderr.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  if (result.error) throw result.error;
+  if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-const child = spawn(command, ["tsx", "src/index.ts"], {
+if (!existsSync(join(pluginRoot, "node_modules", "tsx", "package.json"))) {
+  const npm = isWindows ? "npm.cmd" : "npm";
+  runSetup(npm, ["ci"]);
+}
+
+const { chromium } = await import("playwright");
+if (!existsSync(chromium.executablePath())) {
+  runSetup(process.execPath, [join(pluginRoot, "node_modules", "playwright", "cli.js"), "install", "chromium"]);
+}
+
+const child = spawn(process.execPath, [join(pluginRoot, "node_modules", "tsx", "dist", "cli.mjs"), "src/index.ts"], {
   cwd: pluginRoot,
   env: {
     ...process.env,

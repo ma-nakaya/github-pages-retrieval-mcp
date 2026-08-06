@@ -20,7 +20,7 @@ Claude Code と GitHub Copilot CLI 向けの Agent Plugin として配布しま�
 
 ## プラグインとしての導入
 
-初回起動時に依存パッケージが未導入なら、プラグインが `npm ci` を自動実行してから MCP サーバーを起動します。`package-lock.json` に固定された依存関係だけを導入します。
+初回起動時に依存パッケージが未導入なら、プラグインが `npm ci` を自動実行します。さらに、Playwright 用 Chromium が未導入なら自動でダウンロードしてから MCP サーバーを起動します。Node.js パッケージは `package-lock.json` に固定された依存関係だけを導入します。
 
 ### Claude Code
 
