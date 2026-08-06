@@ -1,7 +1,7 @@
 import { chromium, type Page } from "playwright";
 import type { SourceConfig } from "./config.js";
 import { assertAllowedUrl } from "./config.js";
-import { PageIndexStore, type IndexedPage } from "./page-index.js";
+import { localeFromUrl, PageIndexStore, type IndexedPage } from "./page-index.js";
 
 const ignoredExtensions = new Set([
   ".avif", ".css", ".gif", ".ico", ".jpeg", ".jpg", ".js", ".json", ".map",
@@ -39,6 +39,73 @@ function isAuthenticatedPage(page: Page, source: SourceConfig): boolean {
   return allowed;
 }
 
+async function documentSignature(page: Page): Promise<string> {
+  const content = page.locator("article.site-document-container, article, main").first();
+  await content.waitFor({ state: "attached", timeout: 10_000 }).catch(() => undefined);
+  const [text, linkCount] = await Promise.all([
+    content.innerText({ timeout: 5_000 }).catch(() => ""),
+    page.locator("a[href]").count()
+  ]);
+  return `${linkCount}\0${text}`;
+}
+
+async function waitForDocumentStable(page: Page, previousPageSignature?: string): Promise<void> {
+  const headings = page.locator("article.site-document-container, article, main").first().locator("h1, h2, h3, h4, h5, h6");
+  let previous = "";
+  let stableSamples = 0;
+  let contentChanged = previousPageSignature === undefined;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const [signature, headingCount] = await Promise.all([
+      documentSignature(page),
+      headings.count()
+    ]);
+    if (signature !== previousPageSignature) contentChanged = true;
+    if (signature === previous) stableSamples += 1;
+    else stableSamples = 0;
+    if (contentChanged && headingCount > 0 && stableSamples >= 5) return;
+    previous = signature;
+    await page.waitForTimeout(100);
+  }
+}
+
+async function navigateForIndex(
+  page: Page,
+  source: SourceConfig,
+  target: string
+): Promise<{ mode: "spa" | "full"; previousPageSignature?: string }> {
+  const current = page.url();
+  const currentAllowed = source.allowedOrigins.some((origin) => {
+    try {
+      return new URL(origin).origin === new URL(current).origin;
+    } catch {
+      return false;
+    }
+  });
+  if (currentAllowed && localeFromUrl(current) === localeFromUrl(target)) {
+    const previousPageSignature = await documentSignature(page);
+    const targetUrl = new URL(target);
+    for (const href of [targetUrl.pathname, target]) {
+      const link = page.locator(`a[href=${JSON.stringify(href)}]`);
+      if (await link.count() === 0) continue;
+      await link.first().dispatchEvent("click");
+      try {
+        await page.waitForFunction(
+          `() => location.href.split("#", 1)[0] === ${JSON.stringify(target)}`,
+          undefined,
+          { timeout: 3_000 }
+        );
+        return { mode: "spa", previousPageSignature };
+      } catch {
+        break;
+      }
+    }
+  }
+
+  await page.goto(target, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  await waitForProtectedPagesRedirect(page, source);
+  return { mode: "full" };
+}
+
 async function extractPage(page: Page): Promise<{ page: IndexedPage; links: string[] }> {
   return page.evaluate(`(() => {
     const normalize = (value) => (value ?? "").replace(/\\s+/gu, " ").trim();
@@ -67,7 +134,7 @@ async function extractPage(page: Page): Promise<{ page: IndexedPage; links: stri
       return normalizeBody(container.textContent);
     };
 
-    const pageTitle = cleanHeading(headings.find((heading) => heading.tagName === "H1")?.textContent) || document.title;
+    const pageTitle = cleanHeading(headings.find((heading) => heading.tagName === "H1")?.textContent ?? headings[0]?.textContent) || document.title;
     const sections = [];
     const intro = rangeText(undefined, headings[0]);
     if (intro) sections.push({ position: 0, heading: pageTitle, level: 1, body: intro });
@@ -107,12 +174,15 @@ export type RefreshIndexResult = {
   failed: number;
   removed: number;
   truncated: boolean;
+  concurrency: number;
+  spaNavigations: number;
+  fullNavigations: number;
   durationMs: number;
   errors: string[];
 };
 
 export class SiteIndexer {
-  async refresh(source: SourceConfig, databasePath: string, maxPages: number): Promise<RefreshIndexResult> {
+  async refresh(source: SourceConfig, databasePath: string, maxPages: number, concurrency = 12): Promise<RefreshIndexResult> {
     const startedAt = Date.now();
     const runId = `${startedAt}-${Math.random().toString(16).slice(2)}`;
     const startUrl = canonicalizePageUrl(source, source.startUrl);
@@ -130,27 +200,34 @@ export class SiteIndexer {
     let failed = 0;
     let removed = 0;
     let authenticated = true;
+    let spaNavigations = 0;
+    let fullNavigations = 0;
+    const workerLimit = Math.max(1, Math.min(32, concurrency));
 
     try {
-      const page = await context.newPage();
-      while (queue.length > 0 && visited.size < maxPages) {
-        const target = queue.shift()!;
-        if (visited.has(target)) continue;
-        visited.add(target);
+      type Worker = { page: Page; locale?: string; busy: boolean };
+      const workers: Worker[] = await Promise.all(Array.from({ length: workerLimit }, async () => ({
+        page: await context.newPage(),
+        busy: false
+      })));
+
+      const processTarget = async (worker: Worker, target: string) => {
+        const page = worker.page;
         try {
-          await page.goto(target, { waitUntil: "domcontentloaded", timeout: 30_000 });
-          await waitForProtectedPagesRedirect(page, source);
+          const navigation = await navigateForIndex(page, source, target);
+          if (navigation.mode === "spa") spaNavigations += 1;
+          else fullNavigations += 1;
           if (!isAuthenticatedPage(page, source)) {
             authenticated = false;
             errors.push(`Authentication required: ${page.url()}`);
-            break;
+            return;
           }
-          await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => undefined);
-          await page.locator("article, main").first().waitFor({ state: "attached", timeout: 10_000 }).catch(() => undefined);
+          await waitForDocumentStable(page, navigation.previousPageSignature);
           const extracted = await extractPage(page);
           const finalUrl = canonicalizePageUrl(source, extracted.page.url);
           if (!finalUrl) throw new Error(`Navigation left the indexable origin: ${extracted.page.url}`);
           extracted.page.url = finalUrl;
+          worker.locale = localeFromUrl(finalUrl);
 
           const outcome = store.upsertPage(source.id, runId, extracted.page);
           if (outcome === "inserted") inserted += 1;
@@ -170,9 +247,43 @@ export class SiteIndexer {
             errors.push(`${target}: ${error instanceof Error ? error.message : String(error)}`);
           }
         }
-      }
+      };
 
-      const truncated = queue.length > 0;
+      const takeNextTarget = (worker: Worker): string | undefined => {
+        if (queue.length === 0) return undefined;
+        const preferredIndex = worker.locale
+          ? queue.findIndex((candidate) => localeFromUrl(candidate) === worker.locale)
+          : -1;
+        const index = preferredIndex >= 0 ? preferredIndex : 0;
+        return queue.splice(index, 1)[0];
+      };
+
+      const inFlight = new Map<Promise<void>, Worker>();
+      const schedule = (worker: Worker, target: string) => {
+        let task: Promise<void>;
+        worker.busy = true;
+        task = processTarget(worker, target).finally(() => {
+          worker.busy = false;
+          inFlight.delete(task);
+        });
+        inFlight.set(task, worker);
+      };
+
+      while ((queue.length > 0 || inFlight.size > 0) && authenticated) {
+        for (const worker of workers) {
+          if (worker.busy || visited.size >= maxPages || !authenticated) continue;
+          const target = takeNextTarget(worker);
+          if (!target) break;
+          if (visited.has(target)) continue;
+          visited.add(target);
+          schedule(worker, target);
+        }
+        if (inFlight.size === 0) break;
+        await Promise.race(inFlight.keys());
+      }
+      await Promise.allSettled([...inFlight.keys()]);
+
+      const truncated = queue.length > 0 || queued.size > visited.size;
       if (authenticated && failed === 0 && !truncated) {
         removed = store.removePagesNotSeen(source.id, runId);
       }
@@ -187,6 +298,9 @@ export class SiteIndexer {
         failed,
         removed,
         truncated,
+        concurrency: workerLimit,
+        spaNavigations,
+        fullNavigations,
         durationMs: Date.now() - startedAt,
         errors
       };

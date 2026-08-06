@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SourceConfig } from "../src/config.js";
-import { PageIndexStore, type IndexedPage } from "../src/page-index.js";
+import { localeFromUrl, PageIndexStore, type IndexedPage } from "../src/page-index.js";
 import { canonicalizePageUrl } from "../src/site-indexer.js";
 
 const source: SourceConfig = {
@@ -42,8 +42,14 @@ test("SQLite trigram index searches Japanese sections and removes stale pages", 
     assert.equal(results[0]?.heading, "重複クリック防止");
     assert.match(results[0]?.snippet ?? "", /重複クリック/u);
     assert.equal(store.search(source.id, "重複クリック", 5, 120, ".en").length, 0);
+    assert.equal(store.search(source.id, "重複クリック", 5, 120, undefined, "ja").length, 1);
+    assert.equal(store.search(source.id, "重複クリック", 5, 120, undefined, "default").length, 0);
+    assert.equal(store.listPages(source.id, 10, undefined, "ja").length, 2);
+    assert.equal(store.listPages(source.id, 10, undefined, "default").length, 0);
+    assert.deepEqual(store.getStatus(source.id).locales, { ja: 2 });
 
     const section = store.getPageContent(source.id, buttonPage.url, "prevent-click", 500);
+    assert.equal(section?.locale, "ja");
     assert.equal(section?.truncated, false);
     assert.equal(section?.headings.length, 1);
     assert.match(section?.content ?? "", /連続した重複クリック/u);
@@ -63,4 +69,8 @@ test("crawler canonicalizes allowlisted page URLs and rejects assets", () => {
   );
   assert.equal(canonicalizePageUrl(source, "https://docs.example.test/assets/app.js"), undefined);
   assert.equal(canonicalizePageUrl(source, "https://github.com/example/repo"), undefined);
+  assert.equal(localeFromUrl("https://docs.example.test/component/button"), "default");
+  assert.equal(localeFromUrl("https://docs.example.test/component/button.en"), "en");
+  assert.equal(localeFromUrl("https://docs.example.test/component/button.ja"), "ja");
+  assert.equal(localeFromUrl("https://docs.example.test/component/button.zh-CN"), "zh-cn");
 });
