@@ -18,18 +18,37 @@ for (const manifest of [copilotManifest, claudeManifest]) {
   }
 }
 
+for (const field of ["skills", "mcpServers"]) {
+  if (!claudeManifest[field].startsWith("./")) {
+    throw new Error(`Claude plugin ${field} must start with ./.`);
+  }
+}
+if (copilotManifest.version !== claudeManifest.version) {
+  throw new Error("Copilot and Claude plugin versions must match.");
+}
+
 await access(resolve(root, copilotManifest.skills));
 await access(resolve(root, copilotManifest.mcpServers));
 await access(resolve(root, claudeManifest.skills));
 await access(resolve(root, claudeManifest.mcpServers));
 
-const skillRoots = new Set([copilotManifest.skills, claudeManifest.skills]);
+const skillRoots = new Set([
+  resolve(root, copilotManifest.skills),
+  resolve(root, claudeManifest.skills)
+]);
 let skillCount = 0;
 for (const skillRoot of skillRoots) {
-  const directories = (await readdir(resolve(root, skillRoot), { withFileTypes: true }))
+  const directories = (await readdir(skillRoot, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory());
   for (const directory of directories) {
-    await access(resolve(root, skillRoot, directory.name, "SKILL.md"));
+    const skillPath = resolve(skillRoot, directory.name, "SKILL.md");
+    const content = await readFile(skillPath, "utf8");
+    const frontmatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---/u)?.[1];
+    const name = frontmatter?.match(/^name:\s*(.+)$/mu)?.[1]?.trim();
+    const description = frontmatter?.match(/^description:\s*(.+)$/mu)?.[1]?.trim();
+    if (name !== directory.name || !description) {
+      throw new Error(`${skillPath} requires a matching name and non-empty description.`);
+    }
     skillCount += 1;
   }
 }
@@ -39,6 +58,9 @@ for (const path of [".claude-plugin/marketplace.json", ".github/plugin/marketpla
   const marketplace = JSON.parse(await readFile(resolve(root, path), "utf8"));
   if (!Array.isArray(marketplace.plugins) || marketplace.plugins[0]?.source !== ".") {
     throw new Error(`${path} must expose this repository as a plugin source.`);
+  }
+  if (marketplace.plugins[0]?.version !== copilotManifest.version) {
+    throw new Error(`${path} plugin version must match plugin.json.`);
   }
 }
 

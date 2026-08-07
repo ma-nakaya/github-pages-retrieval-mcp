@@ -34,10 +34,11 @@ Never request, transmit, store, or automate passwords, MFA codes, security keys,
 
 ## Retrieval
 
-- After authentication is ready, call `get_pages_index` with a small limit to inspect index status.
+- After authentication is ready, call `get_pages_index` with `limit: 1` to inspect index status and counts. Treat `pages` as one paginated slice, never as proof that an unlisted page is absent.
 - If the index is empty or the user asks for current site content, call `refresh_pages_index`. It starts a background job; poll `get_pages_index` until `refresh.status` is `completed` or `failed`. Do not refresh for every question.
 - Call `search_pages_index` first with the user's component, API, or configuration terms. Search the relevant source by default; set `sourceId` to `all` only when the user asks for a cross-site search. Each cross-site result contains the actual source id needed by `fetch_indexed_section`. Keep the default small result and snippet limits unless broader recall is necessary. Set `locale` to `all`, `default`, `en`, `ja`, or another locale reported by `get_pages_index`.
-- Call `fetch_indexed_section` with the best result URL and heading; use the result `anchor` as the `heading` input when duplicate heading names may exist. Increase `maxChars` only when the returned section is truncated and more detail is needed.
+- Call `fetch_indexed_section` with the best result URL and heading; use the result `anchor` as the `heading` input when duplicate heading names may exist. When content is truncated, fetch the exact heading first and increase `maxChars` only if that section remains incomplete.
+- For a complete page inventory, follow `nextOffset` from `get_pages_index` until it is `null` and verify the collected count against `filteredPageCount`. Do not enumerate every page for a normal named-item search.
 - Use `fetch_pages_content` only when a fresh, unindexed page is explicitly needed.
 - If any retrieval tool reports `auth_required`, stop retrieval and use the authentication workflow.
 - Return the source URL and relevant heading with any extracted information.

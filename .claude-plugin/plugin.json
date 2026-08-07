@@ -1,12 +1,12 @@
 {
   "name": "github-pages-retrieval",
   "description": "認証が必要な Private GitHub Pages をローカル stdio MCP 経由で取得します。",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": {
     "name": "ma-nakaya",
     "url": "https://github.com/ma-nakaya"
   },
   "repository": "https://github.com/ma-nakaya/github-pages-retrieval-mcp",
-  "skills": "skills/",
-  "mcpServers": ".mcp.json"
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
 }

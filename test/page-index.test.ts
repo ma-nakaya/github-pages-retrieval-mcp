@@ -62,6 +62,11 @@ test("SQLite trigram index searches Japanese sections and removes stale pages", 
     assert.equal(store.search(source.id, "重複クリック", 5, 120, undefined, "default").length, 0);
     assert.equal(store.listPages(source.id, 10, undefined, "ja").length, 2);
     assert.equal(store.listPages(source.id, 10, undefined, "default").length, 0);
+    assert.equal(store.countPages(source.id, undefined, "ja"), 2);
+    assert.equal(store.countPages(source.id, "button", "ja"), 1);
+    assert.equal(store.listPages(source.id, 1, undefined, "ja", 0)[0]?.url, buttonPage.url);
+    assert.equal(store.listPages(source.id, 1, undefined, "ja", 1)[0]?.url, tablePage.url);
+    assert.equal(store.listPages(source.id, 1, undefined, "ja", 2).length, 0);
     assert.deepEqual(store.getStatus(source.id).locales, { ja: 2 });
 
     const crossSourceResults = store.search("all", "重複クリック", 5, 120);
@@ -80,6 +85,30 @@ test("SQLite trigram index searches Japanese sections and removes stale pages", 
     assert.equal(store.upsertPage(source.id, "run-2", tablePage), "unchanged");
     assert.equal(store.removePagesNotSeen(source.id, "run-2"), 1);
     assert.equal(store.getStatus(source.id).pageCount, 1);
+  } finally {
+    store.close();
+  }
+});
+
+test("page listing retrieves entries beyond the first 50", async () => {
+  const store = await PageIndexStore.open(":memory:");
+  try {
+    for (let index = 0; index < 51; index += 1) {
+      const name = String(index).padStart(2, "0");
+      store.upsertPage(source.id, "run-1", {
+        url: `https://docs.example.test/component/item-${name}.ja`,
+        title: `Item ${name}`,
+        documentTitle: "Component guide",
+        sections: [{ position: 0, heading: `Item ${name}`, level: 1, body: `Component ${name}` }]
+      });
+    }
+
+    const firstPage = store.listPages(source.id, 50, undefined, "ja");
+    const secondPage = store.listPages(source.id, 50, undefined, "ja", 50);
+    assert.equal(store.countPages(source.id, undefined, "ja"), 51);
+    assert.equal(firstPage.length, 50);
+    assert.equal(secondPage.length, 1);
+    assert.equal(new Set([...firstPage, ...secondPage].map((page) => page.url)).size, 51);
   } finally {
     store.close();
   }

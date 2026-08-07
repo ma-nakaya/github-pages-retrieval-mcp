@@ -5,13 +5,13 @@
   },
   "metadata": {
     "description": "認証が必要な GitHub Pages をローカルで取得するプラグイン。",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "plugins": [
     {
       "name": "github-pages-retrieval",
       "description": "認証が必要な Private GitHub Pages をローカル stdio MCP 経由で取得します。",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "source": "."
     }
   ]

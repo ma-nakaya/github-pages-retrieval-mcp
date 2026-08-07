@@ -11,7 +11,7 @@ import { ALL_SOURCES_ID } from "./source-id.js";
 
 const server = new McpServer({
   name: "github-pages-retrieval",
-  version: "0.1.0"
+  version: "0.2.0"
 }, {
   instructions: "Private GitHub Pages retrieval only. Call list_pages_sources first. If no source is configured, ask the user for the exact Pages site URL, then call configure_pages_source. Use sourceId all only when the user asks to search across every configured source. The server never accesses a source repository or GitHub API."
 });
@@ -172,24 +172,33 @@ server.registerTool("refresh_pages_index", {
 
 server.registerTool("get_pages_index", {
   title: "Get compact Pages index",
-  description: "Returns index status, locale counts, and a compact URL/title list. Use locale, pathContains, and a small limit to minimize tokens.",
+  description: "Returns index status, locale counts, and one page of a compact URL/title list. Use search_pages_index for named items; follow nextOffset only when a complete listing is required.",
   inputSchema: {
     sourceId: z.string().min(1),
     pathContains: z.string().min(1).optional(),
     locale: localeSchema,
-    limit: z.number().int().min(1).max(500).default(50)
+    limit: z.number().int().min(1).max(500).default(50),
+    offset: z.number().int().min(0).default(0)
   }
-}, async ({ sourceId, pathContains, locale, limit }) => {
+}, async ({ sourceId, pathContains, locale, limit, offset }) => {
   const { config, source } = await sourceFor(sourceId);
   const store = await PageIndexStore.open(indexPath(config.stateDir));
   try {
     const status = store.getStatus(source.id);
-    const pages = store.listPages(source.id, limit, pathContains, locale);
+    const filteredPageCount = store.countPages(source.id, pathContains, locale);
+    const pages = store.listPages(source.id, limit, pathContains, locale, offset);
+    const followingOffset = offset + pages.length;
+    const hasMore = followingOffset < filteredPageCount;
     return textResult({
       sourceId: source.id,
       ...status,
       refresh: refreshJobs.get(source.id),
+      filteredPageCount,
+      offset,
+      limit,
       returned: pages.length,
+      hasMore,
+      nextOffset: hasMore ? followingOffset : null,
       pages
     });
   } finally {

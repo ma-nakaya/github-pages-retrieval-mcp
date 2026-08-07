@@ -36,6 +36,24 @@ type SectionRow = {
   body: string;
 };
 
+function pageFilters(sourceId: string, pathContains?: string, locale = "all"): {
+  where: string;
+  values: Array<string | number>;
+} {
+  const filters = ["pages.source_id = ?"];
+  const values: Array<string | number> = [sourceId];
+  const path = pathContains?.trim();
+  if (path) {
+    filters.push("instr(pages.url, ?) > 0");
+    values.push(path);
+  }
+  if (locale !== "all") {
+    filters.push("page_locale(pages.url) = ?");
+    values.push(locale);
+  }
+  return { where: filters.join(" AND "), values };
+}
+
 export type SearchResult = {
   sourceId: string;
   url: string;
@@ -251,32 +269,32 @@ export class PageIndexStore {
     };
   }
 
-  listPages(sourceId: string, limit: number, pathPrefix?: string, locale = "all"): Array<{
+  countPages(sourceId: string, pathContains?: string, locale = "all"): number {
+    const { where, values } = pageFilters(sourceId, pathContains, locale);
+    const row = this.database.prepare(`
+      SELECT COUNT(*) AS page_count
+      FROM pages
+      WHERE ${where}
+    `).get(...values) as { page_count: number };
+    return row.page_count;
+  }
+
+  listPages(sourceId: string, limit: number, pathContains?: string, locale = "all", offset = 0): Array<{
     url: string;
     locale: string;
     title: string;
     sectionCount: number;
     indexedAt: string;
   }> {
-    const prefix = pathPrefix?.trim();
-    const filters = ["pages.source_id = ?"];
-    const values: Array<string | number> = [sourceId];
-    if (prefix) {
-      filters.push("instr(pages.url, ?) > 0");
-      values.push(prefix);
-    }
-    if (locale !== "all") {
-      filters.push("page_locale(pages.url) = ?");
-      values.push(locale);
-    }
-    values.push(limit);
+    const { where, values } = pageFilters(sourceId, pathContains, locale);
+    values.push(limit, offset);
     const sql = `
       SELECT pages.url, pages.title, pages.indexed_at, COUNT(sections.id) AS section_count
       FROM pages LEFT JOIN sections ON sections.page_id = pages.id
-      WHERE ${filters.join(" AND ")}
+      WHERE ${where}
       GROUP BY pages.id
       ORDER BY pages.url
-      LIMIT ?
+      LIMIT ? OFFSET ?
     `;
     const rows = this.database.prepare(sql).all(...values) as Array<{
       url: string;
