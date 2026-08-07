@@ -1,4 +1,4 @@
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const root = process.cwd();
@@ -22,7 +22,18 @@ await access(resolve(root, copilotManifest.skills));
 await access(resolve(root, copilotManifest.mcpServers));
 await access(resolve(root, claudeManifest.skills));
 await access(resolve(root, claudeManifest.mcpServers));
-await access(resolve(root, "skills/github-pages-retrieval/SKILL.md"));
+
+const skillRoots = new Set([copilotManifest.skills, claudeManifest.skills]);
+let skillCount = 0;
+for (const skillRoot of skillRoots) {
+  const directories = (await readdir(resolve(root, skillRoot), { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory());
+  for (const directory of directories) {
+    await access(resolve(root, skillRoot, directory.name, "SKILL.md"));
+    skillCount += 1;
+  }
+}
+if (skillCount === 0) throw new Error("The plugin must include at least one skill.");
 
 for (const path of [".claude-plugin/marketplace.json", ".github/plugin/marketplace.json"]) {
   const marketplace = JSON.parse(await readFile(resolve(root, path), "utf8"));
