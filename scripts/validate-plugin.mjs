@@ -39,3 +39,11 @@ if (!claudeMcp.mcpServers?.["github-pages-retrieval"]?.command) {
 if (!copilotMcp.mcpServers?.["github-pages-retrieval"]?.command) {
   throw new Error("Copilot MCP config must define github-pages-retrieval.");
 }
+
+const copilotServer = copilotMcp.mcpServers["github-pages-retrieval"];
+if (copilotServer.args?.[0] !== "${PLUGIN_ROOT}/scripts/start-plugin.mjs") {
+  throw new Error("Copilot MCP config must resolve start-plugin.mjs from PLUGIN_ROOT.");
+}
+if (copilotServer.env?.GPR_PLUGIN_DATA !== "${COPILOT_PLUGIN_DATA}") {
+  throw new Error("Copilot MCP config must persist data under COPILOT_PLUGIN_DATA.");
+}

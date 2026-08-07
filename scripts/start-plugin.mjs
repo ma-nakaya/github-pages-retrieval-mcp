@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 const pluginRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const pluginData =
   process.env.GPR_PLUGIN_DATA ??
+  process.env.COPILOT_PLUGIN_DATA ??
   process.env.CLAUDE_PLUGIN_DATA ??
   process.env.PLUGIN_DATA ??
   join(pluginRoot, ".data");
