@@ -27,18 +27,9 @@ copilot plugin marketplace add ma-nakaya/github-pages-retrieval-mcp
 copilot plugin install github-pages-retrieval@github-pages-retrieval-marketplace
 ```
 
-リポジトリがPrivateの場合、Copilot CLIが内部で実行するHTTPS cloneにもGitHub認証が必要です。GitHub CLIにはログイン済みでも、Gitのcredential helperが未設定だと`Repository not found`になることがあります。その場合は、次を実行してからマーケットプレイスを追加してください。
-
-```sh
-gh auth status
-gh auth setup-git
-```
-
-`/allow-all`はCopilot CLIによるツール実行の許可であり、Privateリポジトリへのアクセス権やGit認証を付与するものではありません。
-
 初回起動時に、必要なNode.jsパッケージとPlaywright Chromiumを自動で導入します。
 
-一般的なPages検索とコンポーネントガイド検索のAgent Skillを同梱しており、Claude CodeとGitHub Copilot CLIの両方から利用できます。
+GitHub Pages検索用のAgent Skillを同梱しており、Claude CodeとGitHub Copilot CLIの両方から利用できます。
 
 ## 使い方
 
