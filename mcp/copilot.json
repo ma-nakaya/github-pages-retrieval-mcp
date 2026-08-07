@@ -3,7 +3,10 @@
     "github-pages-retrieval": {
       "type": "local",
       "command": "node",
-      "args": ["scripts/start-plugin.mjs"],
+      "args": ["${PLUGIN_ROOT}/scripts/start-plugin.mjs"],
+      "env": {
+        "GPR_PLUGIN_DATA": "${COPILOT_PLUGIN_DATA}"
+      },
       "tools": ["*"]
     }
   }

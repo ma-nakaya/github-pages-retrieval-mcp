@@ -85,7 +85,7 @@ flowchart TD
 
 ## ローカルデータとセキュリティ
 
-設定、ブラウザプロファイル、認証状態、検索索引は非公開のローカルディレクトリへ保存されます。Claude Codeは`CLAUDE_PLUGIN_DATA`、GitHub Copilot CLIは`GPR_PLUGIN_DATA`で保存先を指定できます。
+設定、ブラウザプロファイル、認証状態、検索索引は非公開のローカルディレクトリへ保存されます。Claude Codeは`CLAUDE_PLUGIN_DATA`、GitHub Copilot CLIは`COPILOT_PLUGIN_DATA`として提供する永続ディレクトリを利用します。手動起動時は`GPR_PLUGIN_DATA`で保存先を上書きできます。
 
 - アクセスするのは設定されたPagesオリジン内のHTMLページだけです。
 - ソースリポジトリ、GitHub API、外部の埋め込みサービスは利用しません。
